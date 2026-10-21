@@ -37,11 +37,15 @@ _slots = threading.BoundedSemaphore(2)
 # swapping youtube.com for this host in a video link opens it here.
 YT_PATH = re.compile(r'^/(?:watch|(?:shorts/|embed/|live/)?([\w-]{11}))/?$')
 # Default: H.264, capped at 720p. ?fmt=vp9 asks for VP9+Opus (software
-# decoded on some phones that choke on H.264); ?fmt=low for 360p at <=30 fps.
+# decoded on some phones that choke on H.264); ?fmt=av1 for AV1 up to 480p, ?fmt=low for 360p at <=30 fps.
 FORMATS = {
     '': ('bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/'
          'b[ext=mp4][height<=720]/bv*[height<=720]+ba/b'),
     'vp9': 'bv*[ext=webm][protocol=https][height<=720]+ba[ext=webm][protocol=https]/bv*[height<=720]+ba/b',
+    # AV1 is software-decoded on most phones; Firefox for Android can't copy
+    # hardware-decoded (H.264/VP9) frames into a canvas, so it draws black.
+    'av1': ('bv*[vcodec^=av01][ext=mp4][protocol=https][height<=480]+ba[ext=m4a][protocol=https]/'
+            'bv*[vcodec^=av01][protocol=https][height<=480]+ba/b'),
     'low': ('bv*[vcodec^=avc1][height<=360][fps<=30]+ba[ext=m4a]/'
             'b[ext=mp4][height<=360]/bv*[height<=360]+ba/b'),
 }
