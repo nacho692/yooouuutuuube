@@ -26,13 +26,16 @@ import subprocess
 import sys
 import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 HOST = os.environ.get('HOST', '127.0.0.1')
 # Same hosts the page sends here.
 RESOLVE_HOSTS = re.compile(r'^(www\.|m\.|music\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)$')
 _slots = threading.BoundedSemaphore(2)
+# YouTube-shaped paths (/watch?v=, /shorts/ID, youtu.be-style /ID), so
+# swapping youtube.com for this host in a video link opens it here.
+YT_PATH = re.compile(r'^/(?:watch|(?:shorts/|embed/|live/)?([\w-]{11}))/?$')
 # H.264 so any browser decodes it; capped at 720p.
 FORMAT = ('bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/'
           'b[ext=mp4][height<=720]/bv*[height<=720]+ba/b')
@@ -57,6 +60,17 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == '/resolve':
             return self.handle_resolve(parse_qs(parsed.query).get('url', [''])[0])
+        m = YT_PATH.match(parsed.path)
+        if m and not os.path.exists(self.translate_path(parsed.path)):
+            q = parse_qs(parsed.query)
+            if m.group(1):
+                q['v'] = [m.group(1)]
+            if q.get('v'):
+                self.send_response(302)
+                self.send_header('Location', '/?' + urlencode(q, doseq=True))
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+                return None
         return super().do_GET()
 
     def handle_resolve(self, url):

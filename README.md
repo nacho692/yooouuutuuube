@@ -21,6 +21,14 @@ browser streams from YouTube over your own connection. Those URLs are signed
 for the IP that resolved them, so this has to run on the viewer's machine.
 Local files and direct URLs work from any static host, or straight from disk.
 
+## Links
+
+The address bar always holds a link to what's playing (`?mode=…&v=…&vol=…`).
+YouTube links also work by swapping the host: `/watch?v=ID`, `/shorts/ID`
+and youtu.be-style `/ID` redirect to `/?v=ID`. Browsers block autoplay with
+sound until you interact with the page, so a link with `vol` may start muted
+and unmute on the first click or key press.
+
 ## Controls
 
 - Mouse movement shows the UI; it hides after 4 s idle, as in the original.
@@ -30,6 +38,6 @@ Local files and direct URLs work from any static host, or straight from disk.
 
 ## URL parameters
 
-`mode` (`feedback` | `mosaic` | `zoetrope`), `url`, `vol` (0–100), `fbScale`,
+`mode` (`feedback` | `mosaic` | `zoetrope`), `v` (YouTube id), `url`, `vol` (0–100), `fbScale`,
 `zWidth`, `zHeight`, `zDirection` (e.g. `top_right`, `left_down`, `rand`),
 `zFlux` (`1`/`0`).

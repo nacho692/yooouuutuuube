@@ -271,10 +271,36 @@
     else { audio.removeAttribute('src'); audio.load(); }
     applyVolume(volume);
   }
-  video.addEventListener('play', () => { if (splitAudio) { audio.currentTime = video.currentTime; audio.play().catch(()=>{}); } });
+  // Browsers refuse unmuted autoplay until the user interacts with the page
+  // (and refuse <audio> autoplay even muted). A ?vol link that hits this
+  // plays the video muted and starts the sound on the first click or key.
+  let soundBlocked = false;
+  function playWithSound(el){
+    return el.play().catch((err) => {
+      if (err.name !== 'NotAllowedError') throw err;
+      soundBlocked = true;
+      if (volume > 0) setStatus('click anywhere for sound', 'ok');
+      if (el.muted) throw err;
+      el.muted = true;
+      return el.play();
+    });
+  }
+  function unblockSound(){
+    if (!soundBlocked) return;
+    soundBlocked = false;
+    applyVolume(volume);
+    if (splitAudio && !video.paused) {
+      audio.currentTime = video.currentTime;
+      audio.play().catch(()=>{});
+    }
+    if (volume > 0) setStatus('streaming', 'ok');
+  }
+  window.addEventListener('pointerdown', unblockSound, true);
+  window.addEventListener('keydown', unblockSound, true);
+  video.addEventListener('play', () => { if (splitAudio) { audio.currentTime = video.currentTime; playWithSound(audio).catch(()=>{}); } });
   video.addEventListener('pause', () => { if (splitAudio) audio.pause(); });
   video.addEventListener('waiting', () => { if (splitAudio) audio.pause(); });
-  video.addEventListener('playing', () => { if (splitAudio && audio.paused) audio.play().catch(()=>{}); });
+  video.addEventListener('playing', () => { if (splitAudio && audio.paused) playWithSound(audio).catch(()=>{}); });
   video.addEventListener('seeked', () => { if (splitAudio) audio.currentTime = video.currentTime; });
   video.addEventListener('timeupdate', () => {
     if (splitAudio && !video.paused && Math.abs(audio.currentTime - video.currentTime) > 0.3) audio.currentTime = video.currentTime;
@@ -361,6 +387,7 @@
     else if (mode === 'mosaic') resizeMosaicCanvas();
     else resizeZoetropeCanvas();
     sizeToViewport();
+    syncLink();
   }
   document.getElementById('modeFeedback').addEventListener('click', () => setMode('feedback'));
   document.getElementById('modeMosaic').addEventListener('click', () => setMode('mosaic'));
@@ -403,6 +430,7 @@
   document.getElementById('vol').addEventListener('input', (e) => {
     applyVolume(Number(e.target.value));
     document.getElementById('volVal').textContent = e.target.value;
+    syncLink();
   });
 
   function setStatus(msg, cls){
@@ -1238,8 +1266,8 @@
     else if (mode === 'mosaic') resizeMosaicCanvas();
     else resizeZoetropeCanvas();
     sizeToViewport();
-    video.play().catch(() => setStatus('autoplay blocked — click Play', 'err'));
     setStatus('streaming', 'ok');
+    playWithSound(video).catch(() => setStatus('autoplay blocked — click Play', 'err'));
   }
 
   video.addEventListener('loadeddata', startIfReady);
@@ -1257,9 +1285,37 @@
     if (/^[\w-]{11}$/.test(url)) return true;
     try { return RESOLVE_HOSTS.test(new URL(url).hostname); } catch (e) { return false; }
   }
+  function youtubeId(url){
+    if (/^[\w-]{11}$/.test(url)) return url;
+    try {
+      const u = new URL(url);
+      if (!RESOLVE_HOSTS.test(u.hostname) || /vimeo/.test(u.hostname)) return null;
+      const m = u.hostname.endsWith('youtu.be') ? u.pathname.match(/^\/([\w-]{11})/) : u.pathname.match(/^\/(?:shorts|embed|live)\/([\w-]{11})/);
+      return m ? m[1] : u.searchParams.get('v');
+    } catch (e) { return null; }
+  }
+
+  // Keep the address bar a shareable link to what's playing: mode, the video
+  // (?v= for YouTube, ?url= otherwise) and volume. Other params pass through.
+  let linkedUrl = null, linkReady = false;
+  function syncLink(){
+    if (!linkReady) return;
+    const p = new URLSearchParams(location.search);
+    p.set('mode', mode);
+    p.delete('v'); p.delete('url');
+    const id = linkedUrl && youtubeId(linkedUrl);
+    if (id) p.set('v', id);
+    else if (linkedUrl) p.set('url', linkedUrl);
+    if (volume > 0) p.set('vol', volume); else p.delete('vol');
+    const q = p.toString();
+    history.replaceState(null, '', location.pathname + (q ? '?' + q : '') + location.hash);
+  }
+
   let loadSeq = 0;
   async function loadUrl(url){
     if (!url) return;
+    linkedUrl = url;
+    syncLink();
     const seq = ++loadSeq;
     let audioUrl = null;
     framesWritten = 0;
@@ -1299,6 +1355,8 @@
     if (!f) return;
     framesWritten = 0;
     loadSeq++;
+    linkedUrl = null;
+    syncLink();
     setAudioSrc(null);
     setStatus('loading local file…');
     video.src = URL.createObjectURL(f);
@@ -1312,7 +1370,7 @@
     // Zoetrope: the original's togglePause (stops the zoetrope and flux tweens,
     // restores flux on resume).
     if (mode === 'zoetrope' && zoe.ready && Z.isPaused === running) zTogglePause();
-    if (running) video.play().catch(()=>{});
+    if (running) playWithSound(video).catch(()=>{});
     else video.pause();
   }
   document.getElementById('playBtn').addEventListener('click', () => setRunning(!running));
@@ -1371,10 +1429,12 @@
     document.getElementById('volVal').textContent = qVol;
   }
 
-  const qUrl = qs.get('url');
+  linkReady = true;
+  const qV = qs.get('v');
+  const qUrl = qs.get('url') || (qV && 'https://www.youtube.com/watch?v=' + qV);
   if (qUrl) {
     document.getElementById('urlInput').value = qUrl;
     loadUrl(qUrl);
-  }
+  } else syncLink();
 })();
 </script>
