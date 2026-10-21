@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mosaic Deriva</title>
 <style>
   :root{
@@ -87,6 +88,10 @@
     pointer-events:none; animation:soundPulse 1.6s ease-in-out infinite;
   }
   #soundPrompt[hidden]{display:none;}
+  @media (max-width:520px){
+    #console{left:10px; right:10px; bottom:10px; width:auto; max-height:55vh;}
+    #hud{display:none;}
+  }
   #soundPrompt svg{width:18px; height:18px; color:var(--scan); flex:none;}
   @keyframes soundPulse{50%{opacity:.6;}}
 
@@ -1218,6 +1223,8 @@
     if (dragging && mode === 'zoetrope' && Z.fluxMode) return;
     resetUIHideTimer();
   });
+  // Touch has no hover, so a tap is the only way to bring the UI back.
+  window.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') resetUIHideTimer(); }, true);
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'h' && e.key !== 'H') return;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
