@@ -296,6 +296,9 @@
   video.playsInline = true;
   video.referrerPolicy = 'no-referrer';
   video.preload = 'auto';
+  // Attached (but invisible) so mobile browsers treat it as a rendered element.
+  video.setAttribute('style', 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;');
+  document.body.appendChild(video);
 
   // YouTube streams come as separate video and audio URLs; the audio plays
   // in its own element, slaved to the video's clock.
@@ -1397,7 +1400,8 @@
       }
       setStatus('resolving via yt-dlp…');
       try {
-        const res = await fetch('resolve?url=' + encodeURIComponent(url));
+        const fmt = qs.get('fmt');
+        const res = await fetch('resolve?url=' + encodeURIComponent(url) + (fmt ? '&fmt=' + encodeURIComponent(fmt) : ''));
         const body = await res.json().catch(() => ({ error: 'server has no /resolve — run serve.py' }));
         if (seq !== loadSeq) return;
         if (!res.ok || !body.src) { setStatus(body.error || 'resolve failed', 'err'); return; }
@@ -1499,6 +1503,30 @@
     document.getElementById('volVal').textContent = qVol;
   }
 
+  // ?debug=1: on-screen readout for devices without a console.
+  if (qs.get('debug')) {
+    const box = document.createElement('pre');
+    box.className = 'mono';
+    box.style.cssText = 'position:fixed;left:6px;top:6px;margin:0;padding:6px 8px;z-index:99;font-size:10px;line-height:1.35;color:#0f0;background:rgba(0,0,0,.75);pointer-events:none;max-width:96vw;white-space:pre-wrap;word-break:break-all;';
+    document.body.appendChild(box);
+    const errs = [];
+    window.addEventListener('error', (e) => errs.push(e.message));
+    window.addEventListener('unhandledrejection', (e) => errs.push(String(e.reason)));
+    const vd = () => {
+      const v = video, a = audio;
+      let probe = '-';
+      try { const c = document.createElement('canvas'); c.width = c.height = 1; const x = c.getContext('2d'); x.drawImage(v, 0, 0, 1, 1); probe = 'drawn'; } catch (e) { probe = e.name; }
+      box.textContent = [
+        'mode ' + mode + '  frames ' + framesWritten + '  sim ' + (zoe.ready ? 'zoe-ready' : '-'),
+        'video rs=' + v.readyState + ' ns=' + v.networkState + ' ' + v.videoWidth + 'x' + v.videoHeight + ' t=' + v.currentTime.toFixed(1) + (v.paused ? ' PAUSED' : '') + ' err=' + (v.error ? v.error.code + ' ' + v.error.message : '-'),
+        'audio rs=' + a.readyState + ' t=' + a.currentTime.toFixed(1) + (a.paused ? ' PAUSED' : '') + (splitAudio ? '' : ' (n/a)'),
+        'canvas ' + canvas.width + 'x' + canvas.height + '  win ' + innerWidth + 'x' + innerHeight + ' dpr ' + devicePixelRatio + '  drawImage(video): ' + probe,
+        'status: ' + document.getElementById('status').textContent,
+        errs.length ? 'ERR: ' + errs.slice(-3).join(' | ') : ''
+      ].filter(Boolean).join('\n');
+    };
+    setInterval(vd, 500);
+  }
   linkReady = true;
   const qV = qs.get('v');
   const qUrl = qs.get('url') || (qV && 'https://www.youtube.com/watch?v=' + qV);

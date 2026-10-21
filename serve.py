@@ -36,14 +36,20 @@ _slots = threading.BoundedSemaphore(2)
 # YouTube-shaped paths (/watch?v=, /shorts/ID, youtu.be-style /ID), so
 # swapping youtube.com for this host in a video link opens it here.
 YT_PATH = re.compile(r'^/(?:watch|(?:shorts/|embed/|live/)?([\w-]{11}))/?$')
-# H.264 so any browser decodes it; capped at 720p.
-FORMAT = ('bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/'
-          'b[ext=mp4][height<=720]/bv*[height<=720]+ba/b')
+# Default: H.264, capped at 720p. ?fmt=vp9 asks for VP9+Opus (software
+# decoded on some phones that choke on H.264); ?fmt=low for 360p at <=30 fps.
+FORMATS = {
+    '': ('bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/'
+         'b[ext=mp4][height<=720]/bv*[height<=720]+ba/b'),
+    'vp9': 'bv*[ext=webm][protocol=https][height<=720]+ba[ext=webm][protocol=https]/bv*[height<=720]+ba/b',
+    'low': ('bv*[vcodec^=avc1][height<=360][fps<=30]+ba[ext=m4a]/'
+            'b[ext=mp4][height<=360]/bv*[height<=360]+ba/b'),
+}
 
 
-def resolve(url):
+def resolve(url, fmt=''):
     proc = subprocess.run(
-        ['yt-dlp', '--no-playlist', '--no-warnings', '-f', FORMAT, '-g', '--', url],
+        ['yt-dlp', '--no-playlist', '--no-warnings', '-f', FORMATS.get(fmt, FORMATS['']), '-g', '--', url],
         capture_output=True, text=True, timeout=120)
     lines = [l.strip() for l in proc.stdout.splitlines() if l.strip()]
     if proc.returncode != 0 or not lines:
@@ -59,7 +65,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path == '/resolve':
-            return self.handle_resolve(parse_qs(parsed.query).get('url', [''])[0])
+            q = parse_qs(parsed.query)
+            return self.handle_resolve(q.get('url', [''])[0], q.get('fmt', [''])[0])
         m = YT_PATH.match(parsed.path)
         if m and not os.path.exists(self.translate_path(parsed.path)):
             q = parse_qs(parsed.query)
@@ -73,14 +80,14 @@ class Handler(SimpleHTTPRequestHandler):
                 return None
         return super().do_GET()
 
-    def handle_resolve(self, url):
+    def handle_resolve(self, url, fmt=''):
         parsed = urlparse(url)
         if parsed.scheme not in ('http', 'https') or not RESOLVE_HOSTS.match(parsed.hostname or ''):
             return self.send_json(400, {'error': 'expected a YouTube or Vimeo link'})
         if not _slots.acquire(timeout=30):
             return self.send_json(429, {'error': 'resolver busy, try again'})
         try:
-            self.send_json(200, resolve(url))
+            self.send_json(200, resolve(url, fmt))
         except Exception as e:  # yt-dlp error or timeout
             self.send_json(502, {'error': str(e)})
         finally:
