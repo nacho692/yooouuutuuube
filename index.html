@@ -1400,7 +1400,9 @@
       }
       setStatus('resolving via yt-dlp…');
       try {
-        const fmt = qs.get('fmt');
+        // Firefox for Android draws hardware-decoded video as black canvas
+        // frames; AV1 is software-decoded there. ?fmt= overrides.
+        const fmt = qs.get('fmt') || (/Android/.test(navigator.userAgent) && /Firefox\//.test(navigator.userAgent) ? 'av1' : '');
         const res = await fetch('resolve?url=' + encodeURIComponent(url) + (fmt ? '&fmt=' + encodeURIComponent(fmt) : ''));
         const body = await res.json().catch(() => ({ error: 'server has no /resolve — run serve.py' }));
         if (seq !== loadSeq) return;
