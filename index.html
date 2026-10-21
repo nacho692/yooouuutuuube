@@ -76,6 +76,20 @@
   }
   body.ui-hidden, body.ui-hidden *{cursor:none !important;}
 
+  /* Shown while the browser holds back sound; any click or key dismisses it. */
+  #soundPrompt{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+    display:flex; align-items:center; gap:10px;
+    padding:12px 18px; border-radius:10px;
+    background:color-mix(in srgb, var(--panel) 92%, transparent);
+    border:1px solid var(--line); backdrop-filter:blur(10px);
+    color:var(--ink); font-size:12px; letter-spacing:.14em; text-transform:uppercase;
+    pointer-events:none; animation:soundPulse 1.6s ease-in-out infinite;
+  }
+  #soundPrompt[hidden]{display:none;}
+  #soundPrompt svg{width:18px; height:18px; color:var(--scan); flex:none;}
+  @keyframes soundPulse{50%{opacity:.6;}}
+
   #empty{
     position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
     flex-direction:column; gap:10px; text-align:center; pointer-events:none;
@@ -154,6 +168,11 @@
 <div id="empty">
   <div class="glyph mono">no signal</div>
   <p>Paste a YouTube/Vimeo link (needs serve.py), a direct mp4/webm URL, or pick a local video file.</p>
+</div>
+
+<div id="soundPrompt" class="mono" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+  Click anywhere for sound
 </div>
 
 <div id="hud">
@@ -279,7 +298,10 @@
     return el.play().catch((err) => {
       if (err.name !== 'NotAllowedError') throw err;
       soundBlocked = true;
-      if (volume > 0) setStatus('click anywhere for sound', 'ok');
+      if (volume > 0) {
+        setStatus('click anywhere for sound', 'ok');
+        document.getElementById('soundPrompt').hidden = false;
+      }
       if (el.muted) throw err;
       el.muted = true;
       return el.play();
@@ -288,6 +310,7 @@
   function unblockSound(){
     if (!soundBlocked) return;
     soundBlocked = false;
+    document.getElementById('soundPrompt').hidden = true;
     applyVolume(volume);
     if (splitAudio && !video.paused) {
       audio.currentTime = video.currentTime;
