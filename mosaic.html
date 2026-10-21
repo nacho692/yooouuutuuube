@@ -1,0 +1,1380 @@
+<meta charset="utf-8">
+<title>Mosaic Deriva</title>
+<style>
+  :root{
+    --void:#0a0d12;
+    --panel:#11151c;
+    --line:#232a35;
+    --ink:#e7ebf0;
+    --muted:#6b7686;
+    --scan:#4df0c0;
+    --bleed:#ff4d8d;
+  }
+  @media (prefers-color-scheme: light){
+    :root{
+      --void:#eef1f4;
+      --panel:#ffffff;
+      --line:#d4d9e0;
+      --ink:#161a1f;
+      --muted:#6b7686;
+      --scan:#0a9c78;
+      --bleed:#c81763;
+    }
+  }
+  :root[data-theme="dark"]{
+    --void:#0a0d12; --panel:#11151c; --line:#232a35; --ink:#e7ebf0; --muted:#6b7686; --scan:#4df0c0; --bleed:#ff4d8d;
+  }
+  :root[data-theme="light"]{
+    --void:#eef1f4; --panel:#ffffff; --line:#d4d9e0; --ink:#161a1f; --muted:#6b7686; --scan:#0a9c78; --bleed:#c81763;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%; overflow:hidden;
+    background:var(--void); color:var(--ink);
+    font-family:-apple-system,"Segoe UI",sans-serif;
+  }
+  .mono{
+    font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  }
+
+  #stage{
+    position:fixed; inset:0; overflow:hidden; cursor:grab; touch-action:none;
+    background:
+      radial-gradient(circle at 20% 15%, color-mix(in srgb, var(--scan) 7%, transparent), transparent 55%),
+      radial-gradient(circle at 80% 85%, color-mix(in srgb, var(--bleed) 6%, transparent), transparent 55%),
+      var(--void);
+  }
+  #stage.dragging{cursor:grabbing;}
+  #world{
+    position:absolute; left:50%; top:50%;
+    transform-origin:0 0;
+    will-change:transform;
+  }
+  #mosaic{
+    display:block;
+    transform:translate(-50%,-50%);
+    image-rendering:pixelated;
+    box-shadow:0 0 0 1px var(--line), 0 40px 120px rgba(0,0,0,.45);
+  }
+
+  #hud{
+    position:fixed; top:18px; left:22px; pointer-events:none;
+    letter-spacing:.14em; text-transform:uppercase;
+    font-size:11px; color:var(--muted);
+  }
+  #hud b{
+    display:block; font-size:15px; letter-spacing:.08em; color:var(--ink); margin-bottom:2px;
+  }
+  #hud b::selection{background:var(--scan); color:var(--void);}
+  #hud em{
+    font-style:normal; color:var(--scan);
+  }
+  /* Fade out only; showing is instant (UI.hide tweens, UI.show snaps). */
+  body.ui-hidden #console, body.ui-hidden #hud{
+    opacity:0; pointer-events:none; transition:opacity .2s linear;
+  }
+  body.ui-hidden, body.ui-hidden *{cursor:none !important;}
+
+  #empty{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; text-align:center; pointer-events:none;
+    color:var(--muted); padding:0 24px;
+  }
+  #empty.hidden{display:none;}
+  .hidden{display:none !important;}
+  #feedbackControls, #mosaicControls, #zoetropeControls{display:flex; flex-direction:column; gap:12px;}
+  #empty .glyph{
+    font-size:13px; letter-spacing:.3em; color:var(--line); text-transform:uppercase;
+  }
+  #empty p{margin:0; font-size:13px; max-width:360px; line-height:1.6;}
+
+  #console{
+    position:fixed; left:18px; bottom:18px; width:300px;
+    background:color-mix(in srgb, var(--panel) 92%, transparent);
+    border:1px solid var(--line); border-radius:10px;
+    padding:14px 14px 16px;
+    backdrop-filter:blur(10px);
+    display:flex; flex-direction:column; gap:12px;
+    max-height:calc(100vh - 36px); overflow-y:auto;
+  }
+  .row{display:flex; flex-direction:column; gap:6px;}
+  .row.pair{flex-direction:row; gap:10px;}
+  .row.pair > *{flex:1; min-width:0;}
+  label{
+    font-size:10px; text-transform:uppercase; letter-spacing:.12em; color:var(--muted);
+    display:flex; justify-content:space-between; align-items:baseline;
+  }
+  label span.val{color:var(--scan);}
+  input[type="text"]{
+    width:100%; background:var(--void); border:1px solid var(--line); border-radius:6px;
+    color:var(--ink); padding:8px 9px; font-size:12px; outline:none;
+  }
+  input[type="text"]:focus{border-color:var(--scan);}
+  input[type="text"]::placeholder{color:var(--muted);}
+  input[type="range"]{
+    width:100%; appearance:none; height:3px; background:var(--line); border-radius:3px; outline:none;
+  }
+  input[type="range"]::-webkit-slider-thumb{
+    appearance:none; width:13px; height:13px; border-radius:50%;
+    background:var(--scan); cursor:pointer; border:2px solid var(--panel);
+  }
+  select{
+    width:100%; background:var(--void); border:1px solid var(--line); border-radius:6px;
+    color:var(--ink); padding:7px 8px; font-size:12px; outline:none;
+  }
+  button{
+    font-family:inherit; font-size:11px; text-transform:uppercase; letter-spacing:.1em;
+    border-radius:6px; border:1px solid var(--line); background:var(--void); color:var(--ink);
+    padding:8px 10px; cursor:pointer;
+  }
+  button:hover{border-color:var(--scan);}
+  button.primary{
+    background:var(--scan); color:var(--void); border-color:var(--scan); font-weight:600;
+  }
+  button.primary:hover{filter:brightness(1.08);}
+  .hr{height:1px; background:var(--line); margin:2px 0;}
+  #status{
+    font-size:10.5px; color:var(--muted); min-height:14px; letter-spacing:.02em;
+  }
+  #status.err{color:var(--bleed);}
+  #status.ok{color:var(--scan);}
+  .filebtn{position:relative; overflow:hidden;}
+  .filebtn input[type="file"]{
+    position:absolute; inset:0; opacity:0; cursor:pointer;
+  }
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+</style>
+
+<div id="stage">
+  <div id="world"><canvas id="mosaic"></canvas></div>
+</div>
+
+<div id="empty">
+  <div class="glyph mono">no signal</div>
+  <p>Paste a YouTube/Vimeo link (needs serve.py), a direct mp4/webm URL, or pick a local video file.</p>
+</div>
+
+<div id="hud">
+  <b class="mono">MOSAIC DERIVA</b>
+  frame <em id="frameCount" class="mono">0</em> · drag to pan · scroll to zoom
+</div>
+
+<div id="console">
+  <div class="row">
+    <label>Media URL</label>
+    <input id="urlInput" type="text" placeholder="YouTube link or https://…/video.mp4" autocomplete="off" />
+  </div>
+  <div class="row pair">
+    <button id="loadBtn" class="primary">Load</button>
+    <button class="filebtn">Local file<input id="fileInput" type="file" accept="video/*" /></button>
+  </div>
+  <div id="status" class="mono"></div>
+
+  <div class="hr"></div>
+
+  <div class="row pair">
+    <button id="modeFeedback" class="primary">Feedback</button>
+    <button id="modeMosaic">Mosaic</button>
+  </div>
+  <div class="row">
+    <button id="modeZoetrope" style="width:100%;">Zoetrope</button>
+  </div>
+
+  <div id="feedbackControls">
+    <div class="row">
+      <label>Scale per loop<span class="val mono" id="fbScaleVal">0.90</span></label>
+      <input id="fbScale" type="range" min="0.8" max="0.95" step="0.005" value="0.90" />
+    </div>
+    <p class="mono" style="font-size:10px; color:var(--muted); margin:2px 0 0; line-height:1.5;">Click/drag the stage to move the stacking offset.</p>
+  </div>
+
+  <div id="mosaicControls" class="hidden">
+    <p class="mono" style="font-size:10px; color:var(--muted); margin:0; line-height:1.5;">Watch it recursively split into finer panels. Drag to pan (wraps at the edges).</p>
+  </div>
+
+  <div id="zoetropeControls" class="hidden">
+    <div class="row pair">
+      <div class="row"><label>Frame width</label><select id="zWidth"></select></div>
+      <div class="row"><label>Frame height</label><select id="zHeight"></select></div>
+    </div>
+    <div class="row">
+      <label>Starting position/direction</label>
+      <select id="zDirection">
+        <option value="rand" selected>Random</option>
+        <option value="top_right">Top Left - Moving Right</option>
+        <option value="left_down">Top Left - Moving Down</option>
+        <option value="top_left">Top Right - Moving Left</option>
+        <option value="right_down">Top Right - Moving Down</option>
+        <option value="bottom_right">Bottom Left - Moving Right</option>
+        <option value="left_up">Bottom Left - Moving Up</option>
+        <option value="bottom_left">Bottom Right - Moving Left</option>
+        <option value="right_up">Bottom Right - Moving Up</option>
+      </select>
+    </div>
+    <label style="flex-direction:row; align-items:center; gap:6px; cursor:pointer;">
+      <input type="checkbox" id="zFlux" checked style="width:auto;" />
+      <span>Flux mode</span>
+    </label>
+    <div id="zState" class="mono" style="font-size:10px; color:var(--scan); min-height:13px;"></div>
+    <p class="mono" style="font-size:10px; color:var(--muted); margin:2px 0 0; line-height:1.5;">Width, height and direction are the original form's fields; changing one restarts the zoetrope. Arrow keys change direction, Space toggles flux, and dragging (flux on) resizes the frame. Reset tweens back to the starting size and turns flux off.</p>
+  </div>
+
+  <div class="row">
+    <label>Volume<span class="val mono" id="volVal">0</span></label>
+    <input id="vol" type="range" min="0" max="100" value="0" />
+  </div>
+
+  <div class="hr"></div>
+
+  <div class="row pair">
+    <button id="playBtn">Pause</button>
+    <button id="resetView">Reset view</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const stage = document.getElementById('stage');
+  const world = document.getElementById('world');
+  const canvas = document.getElementById('mosaic');
+  const ctx = canvas.getContext('2d');
+  const empty = document.getElementById('empty');
+  const status = document.getElementById('status');
+  const frameCountEl = document.getElementById('frameCount');
+
+  const video = document.createElement('video');
+  video.loop = true;
+  video.muted = true;
+  video.playsInline = true;
+  video.referrerPolicy = 'no-referrer';
+  video.preload = 'auto';
+
+  // YouTube streams come as separate video and audio URLs; the audio plays
+  // in its own element, slaved to the video's clock.
+  const audio = new Audio();
+  audio.loop = true;
+  audio.referrerPolicy = 'no-referrer';
+  audio.preload = 'auto';
+  let splitAudio = false, volume = 0;
+  function applyVolume(v){
+    volume = Math.min(100, Math.max(0, v));
+    const out = splitAudio ? audio : video;
+    out.volume = volume / 100;
+    out.muted = volume === 0;
+    if (splitAudio) video.muted = true;
+  }
+  function setAudioSrc(url){
+    splitAudio = !!url;
+    if (url) audio.src = url;
+    else { audio.removeAttribute('src'); audio.load(); }
+    applyVolume(volume);
+  }
+  video.addEventListener('play', () => { if (splitAudio) { audio.currentTime = video.currentTime; audio.play().catch(()=>{}); } });
+  video.addEventListener('pause', () => { if (splitAudio) audio.pause(); });
+  video.addEventListener('waiting', () => { if (splitAudio) audio.pause(); });
+  video.addEventListener('playing', () => { if (splitAudio && audio.paused) audio.play().catch(()=>{}); });
+  video.addEventListener('seeked', () => { if (splitAudio) audio.currentTime = video.currentTime; });
+  video.addEventListener('timeupdate', () => {
+    if (splitAudio && !video.paused && Math.abs(audio.currentTime - video.currentTime) > 0.3) audio.currentTime = video.currentTime;
+  });
+
+  let framesWritten = 0;
+  let running = true;
+
+  let mode = 'feedback';
+  let FB_W = 480, FB_H = 270;
+  const fbA = document.createElement('canvas');
+  const fbB = document.createElement('canvas');
+  let fbCurrent = { canvas: fbA, ctx: fbA.getContext('2d') };
+  let fbScratch = { canvas: fbB, ctx: fbB.getContext('2d') };
+  const fb = {
+    scale: 0.90,
+    sinkX: 0.5, sinkY: 0.5, mouseRatioX: 0.5, mouseRatioY: 0.5,
+    matX: 0, matY: 0
+  };
+
+  function resizeFeedbackCanvas(){
+    const vw = video.videoWidth || 640, vh = video.videoHeight || 360;
+    const cap = 480;
+    const scaleDown = Math.min(1, cap / Math.max(vw, vh));
+    FB_W = Math.max(2, Math.round(vw * scaleDown));
+    FB_H = Math.max(2, Math.round(vh * scaleDown));
+    canvas.width = FB_W; canvas.height = FB_H;
+    fbA.width = FB_W; fbA.height = FB_H;
+    fbB.width = FB_W; fbB.height = FB_H;
+    fbCurrent.ctx.clearRect(0, 0, FB_W, FB_H);
+    fbScratch.ctx.clearRect(0, 0, FB_W, FB_H);
+  }
+
+  // Ported from the decompiled YooouuuTuuubeFeedback.as: a persistent buffer is
+  // redrawn each frame as (a) the live frame tiled as a repeating pattern, offset
+  // by an eased point that tracks the cursor (amplified 1.5x), with (b) the buffer's
+  // own previous content drawn on top, scaled toward MIN/MAX_SCALE (0.8-0.95) and
+  // re-centered by a slower-eased "sink point" — the (1 - scale) term is what makes
+  // that re-centering drift compound into a steerable vanishing point over many frames.
+  const SHIFT_MULT = 1.5;
+  function renderFeedback(){
+    const W = FB_W, H = FB_H;
+    fb.sinkX += (fb.mouseRatioX - fb.sinkX) * 0.08;
+    fb.sinkY += (fb.mouseRatioY - fb.sinkY) * 0.08;
+    const targetMatX = -(fb.mouseRatioX * W) * SHIFT_MULT;
+    const targetMatY = -(fb.mouseRatioY * H) * SHIFT_MULT;
+    fb.matX += (targetMatX - fb.matX) * 0.15;
+    fb.matY += (targetMatY - fb.matY) * 0.15;
+
+    fbScratch.ctx.clearRect(0, 0, W, H);
+
+    fbScratch.ctx.save();
+    const pattern = fbScratch.ctx.createPattern(video, 'repeat');
+    if (pattern && pattern.setTransform) {
+      pattern.setTransform(new DOMMatrix().translate(fb.matX, fb.matY));
+    }
+    fbScratch.ctx.fillStyle = pattern;
+    fbScratch.ctx.fillRect(0, 0, W, H);
+    fbScratch.ctx.restore();
+
+    const offX = (fb.sinkX - 0.5) * W * (1 - fb.scale);
+    const offY = (fb.sinkY - 0.5) * H * (1 - fb.scale);
+    fbScratch.ctx.save();
+    fbScratch.ctx.translate(W / 2 + offX, H / 2 + offY);
+    fbScratch.ctx.scale(fb.scale, fb.scale);
+    fbScratch.ctx.translate(-W / 2, -H / 2);
+    fbScratch.ctx.drawImage(fbCurrent.canvas, 0, 0, W, H);
+    fbScratch.ctx.restore();
+
+    const tmp = fbCurrent; fbCurrent = fbScratch; fbScratch = tmp;
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(fbCurrent.canvas, 0, 0, W, H);
+  }
+
+  function setMode(next){
+    mode = next;
+    document.getElementById('feedbackControls').classList.toggle('hidden', mode !== 'feedback');
+    document.getElementById('mosaicControls').classList.toggle('hidden', mode !== 'mosaic');
+    document.getElementById('zoetropeControls').classList.toggle('hidden', mode !== 'zoetrope');
+    document.getElementById('modeFeedback').classList.toggle('primary', mode === 'feedback');
+    document.getElementById('modeMosaic').classList.toggle('primary', mode === 'mosaic');
+    document.getElementById('modeZoetrope').classList.toggle('primary', mode === 'zoetrope');
+    if (mode === 'feedback') resizeFeedbackCanvas();
+    else if (mode === 'mosaic') resizeMosaicCanvas();
+    else resizeZoetropeCanvas();
+    sizeToViewport();
+  }
+  document.getElementById('modeFeedback').addEventListener('click', () => setMode('feedback'));
+  document.getElementById('modeMosaic').addEventListener('click', () => setMode('mosaic'));
+  document.getElementById('modeZoetrope').addEventListener('click', () => setMode('zoetrope'));
+
+  // The landing form's Frame width / Frame height options, 96 selected.
+  const Z_WIDTH_OPTS = [1920,960,640,480,384,320,240,192,160,128,120,96,80,64,60,48,40,32,30,24,20,16,15,12,10,8,6,5,4,3,2,1];
+  const Z_HEIGHT_OPTS = [1440,720,480,360,288,240,180,160,144,120,96,90,80,72,60,48,45,40,36,32,30,24,20,18,16,15,12,10,9,8,6,5,4,3,2,1];
+  function fillPxSelect(id, values){
+    const el = document.getElementById(id);
+    for (const v of values) el.add(new Option(v + ' px', String(v), v === 96, v === 96));
+  }
+  fillPxSelect('zWidth', Z_WIDTH_OPTS);
+  fillPxSelect('zHeight', Z_HEIGHT_OPTS);
+  function setPxSelect(id, value){
+    const el = document.getElementById(id);
+    if (![...el.options].some(o => o.value === value)) el.add(new Option(value + ' px', value));
+    el.value = value;
+  }
+  for (const [id, key] of [['zWidth', 'width'], ['zHeight', 'height'], ['zDirection', 'direction']]) {
+    document.getElementById(id).addEventListener('change', (e) => {
+      zParams[key] = e.target.value;
+      if (mode === 'zoetrope') resizeZoetropeCanvas();
+    });
+  }
+  document.getElementById('zFlux').addEventListener('change', (e) => {
+    if (zoe.ready && e.target.checked !== Z.fluxMode) zToggleFluxMode();
+    else zParams.flux = e.target.checked ? '1' : '';
+  });
+
+  function bindFbRange(id, valId, key, decimals){
+    const el = document.getElementById(id);
+    const valEl = document.getElementById(valId);
+    el.addEventListener('input', () => {
+      fb[key] = Number(el.value);
+      valEl.textContent = decimals != null ? fb[key].toFixed(decimals) : el.value;
+    });
+  }
+  bindFbRange('fbScale', 'fbScaleVal', 'scale', 2);
+  document.getElementById('vol').addEventListener('input', (e) => {
+    applyVolume(Number(e.target.value));
+    document.getElementById('volVal').textContent = e.target.value;
+  });
+
+  function setStatus(msg, cls){
+    status.textContent = msg || '';
+    status.className = 'mono' + (cls ? ' ' + cls : '');
+  }
+
+  // Ported from the decompiled YooouuuTuuubeMosaic.as + FlipBook.as: a shared ring
+  // buffer of PAGE_N frames backs the whole canvas. A queue of rectangular
+  // "placements" is seeded by a synchronous priming pass (see
+  // primeMosaicPlacements) that skips straight to 16 pieces before anything is
+  // ever recorded; each placement records the live video into its own rect
+  // across a full pass of the ring buffer, then splits into 4 quadrants (a
+  // quadtree split) which queue up to do the same at a tighter crop —
+  // recursing with rising odds of stopping — while a separate cursor continuously
+  // cycles which ring-buffer page is on screen, and a white flash marks whichever
+  // rect is currently (re)recording.
+  const MW = 480, MH = 320, PAGE_N = 48;
+  const pages = [];
+  for (let i = 0; i < PAGE_N; i++) {
+    const c = document.createElement('canvas');
+    c.width = MW; c.height = MH;
+    pages.push(c);
+  }
+  let displayPage = 0;
+  let placements = [];
+  let nextPlacements = [];
+  let iterations = 0;
+  let active = null; // { rect, pageIndex, framesLeft }
+  let flashes = [];
+  const mosaicView = { dX: 0, dY: 0, scale: 1, targetScale: 1 };
+
+  function shuffleInPlace(arr){
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+  }
+
+  // Ported from onPlayerReady(): before any frame is ever recorded, the real
+  // site synchronously calls onDoneDrawing() 5 times on just the queue state
+  // (no drawing happens until the 5th call). Each call pops one placement and
+  // — unless the 20%-after-iteration-1 stop-chance fires, which it can't yet
+  // since iterations is still 0/1 — pushes its 4 quadrant children. Tracing
+  // it through: call 1 splits the full canvas into 4 quadrants (iterations->1);
+  // calls 2-5 each pop one quadrant and split it into 4 (16 total), and call 5
+  // empties the queue, bumping iterations->2 and refilling `placements` with
+  // those 16 shuffled pieces. So the "whole video" and "4 quadrants" stages
+  // are skipped entirely at start — the first thing ever actually recorded
+  // and shown is already 16 pieces, each 1/16 of the canvas.
+  function primeMosaicPlacements(){
+    placements = [{ x: 0, y: 0, w: MW, h: MH }];
+    nextPlacements = [];
+    iterations = 0;
+    for (let i = 0; i < 5; i++) {
+      const rect = placements.shift();
+      if (!(iterations > 1 && Math.random() > 0.8)) {
+        const hw = rect.w / 2, hh = rect.h / 2;
+        nextPlacements.push({ x: rect.x, y: rect.y, w: hw, h: hh });
+        nextPlacements.push({ x: rect.x + hw, y: rect.y, w: hw, h: hh });
+        nextPlacements.push({ x: rect.x + hw, y: rect.y + hh, w: hw, h: hh });
+        nextPlacements.push({ x: rect.x, y: rect.y + hh, w: hw, h: hh });
+      }
+      if (placements.length === 0) {
+        iterations++;
+        if (iterations < 4) shuffleInPlace(nextPlacements);
+        placements = nextPlacements;
+        nextPlacements = [];
+      }
+    }
+  }
+
+  function resizeMosaicCanvas(){
+    canvas.width = MW; canvas.height = MH;
+    for (const p of pages) p.getContext('2d').clearRect(0, 0, MW, MH);
+    displayPage = 0;
+    primeMosaicPlacements();
+    active = null;
+    flashes = [];
+    mosaicView.dX = 0; mosaicView.dY = 0; mosaicView.scale = 1; mosaicView.targetScale = 1;
+  }
+
+  function startNextPlacement(){
+    const rect = placements[0];
+    active = { rect, pageIndex: Math.floor(Math.random() * PAGE_N), framesLeft: PAGE_N };
+    // Source's drawNextPlacement() flashes the rect that's about to be
+    // (re)recorded (placements[0]) — i.e. the piece now going live, not the
+    // bigger piece that just finished and split into it.
+    flashes.push({ rect, start: framesWritten });
+  }
+
+  function finishActivePlacement(){
+    const rect = placements.shift();
+    const canSplit = rect.w >= 16 && rect.h >= 16;
+    if (canSplit && !(iterations > 1 && Math.random() > 0.8)) {
+      const hw = rect.w / 2, hh = rect.h / 2;
+      nextPlacements.push({ x: rect.x, y: rect.y, w: hw, h: hh });
+      nextPlacements.push({ x: rect.x + hw, y: rect.y, w: hw, h: hh });
+      nextPlacements.push({ x: rect.x + hw, y: rect.y + hh, w: hw, h: hh });
+      nextPlacements.push({ x: rect.x, y: rect.y + hh, w: hw, h: hh });
+    }
+    if (placements.length === 0) {
+      iterations++;
+      if (iterations < 4) shuffleInPlace(nextPlacements);
+      placements = nextPlacements;
+      nextPlacements = [];
+    }
+    active = null;
+  }
+
+  function tickMosaicRecording(){
+    if (!active) {
+      if (placements.length > 0) startNextPlacement();
+      else return;
+    }
+    const { rect, pageIndex } = active;
+    if (rect.w >= 2 && rect.h >= 2) {
+      pages[pageIndex].getContext('2d').drawImage(video, rect.x, rect.y, rect.w, rect.h);
+    }
+    active.pageIndex = (active.pageIndex + 1) % PAGE_N;
+    active.framesLeft--;
+    if (active.framesLeft <= 0) finishActivePlacement();
+  }
+
+  function renderMosaic(){
+    tickMosaicRecording();
+    displayPage = (displayPage + 1) % PAGE_N;
+
+    mosaicView.scale += (mosaicView.targetScale - mosaicView.scale) * 0.15;
+
+    ctx.save();
+    const pattern = ctx.createPattern(pages[displayPage], 'repeat');
+    if (pattern && pattern.setTransform) {
+      const m = new DOMMatrix()
+        .translate(MW / 2, MH / 2)
+        .scale(mosaicView.scale, mosaicView.scale)
+        .translate(-MW / 2 + mosaicView.dX, -MH / 2 + mosaicView.dY);
+      pattern.setTransform(m);
+    }
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, MW, MH);
+    ctx.restore();
+
+    // Source (drawNextPlacement): alpha 0->1 over 5 FRAMES, holds fully
+    // opaque white until FRAME_NUM frames have elapsed (roughly one full
+    // recording pass), then 1->0 over a final 5 frames — a real white-out,
+    // not a brief translucent pulse.
+    const FLASH_HOLD = PAGE_N;
+    flashes = flashes.filter(f => framesWritten - f.start < FLASH_HOLD + 5);
+    for (const f of flashes) {
+      const age = framesWritten - f.start;
+      let alpha;
+      if (age < 5) alpha = age / 5;
+      else if (age < FLASH_HOLD) alpha = 1;
+      else alpha = Math.max(0, 1 - (age - FLASH_HOLD) / 5);
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      ctx.fillRect(f.rect.x, f.rect.y, f.rect.w, f.rect.h);
+    }
+  }
+
+  // Zoetrope: a line-for-line port of the decompiled YooouuuTuuube.as (main
+  // class), Zoetrope.as and ZoetropeDirection.as, plus the slice of caurina
+  // Tweener they depend on (~/mosaic-deriva/ffdec/exported_zoetrope/scripts/).
+  // Names mirror the AS3 so the two can be diffed side by side.
+  //
+  // Environment facts taken from the archived site rather than the SWF:
+  // - /v/ embeds the SWF at 100%x100% with quality=MEDIUM, and the SWF sets
+  //   NO_SCALE + TOP_LEFT, so the stage is the whole window at 1:1 pixels.
+  // - The landing form's defaults are width=96, height=96, flux=1 and
+  //   direction=rand; those are the flashvars below.
+  // - MEDIUM quality doesn't smooth bitmaps or video, so every draw here uses
+  //   nearest-neighbour sampling.
+
+  const NEW_DIR_TRANS_TIME = 2.5;
+  const DRAG_TRANSITION_TIME = 10;
+  const AUTO_TWEEN_TIME_MAX = 16;
+  const AUTO_TWEEN_TIME_MIN = 1;
+  const MAX_FRAME_WIDTH = 1920;
+  const MAX_FRAME_HEIGHT = 1440;
+
+  const ZD = {
+    LEFT_UP: 'left_up', LEFT_DOWN: 'left_down', TOP_LEFT: 'top_left', TOP_RIGHT: 'top_right',
+    RIGHT_UP: 'right_up', RIGHT_DOWN: 'right_down', BOTTOM_LEFT: 'bottom_left', BOTTOM_RIGHT: 'bottom_right'
+  };
+  const ZD_ALL = [ZD.LEFT_UP, ZD.LEFT_DOWN, ZD.TOP_LEFT, ZD.TOP_RIGHT, ZD.RIGHT_UP, ZD.RIGHT_DOWN, ZD.BOTTOM_LEFT, ZD.BOTTOM_RIGHT];
+  // getRandomDirection / getUp / getDown / getLeft / getRight: drop `exclude`
+  // from the candidates, shuffle, take the first.
+  function zdPick(candidates, exclude){
+    const a = candidates.filter(d => d !== exclude);
+    return a[Math.floor(Math.random() * a.length)];
+  }
+  function zdIsHorizontal(d){
+    return d === ZD.BOTTOM_LEFT || d === ZD.BOTTOM_RIGHT || d === ZD.TOP_LEFT || d === ZD.TOP_RIGHT;
+  }
+  function randRange(min, max){ return Math.random() * (max - min) + min; } // DSMath.randRange
+
+  // caurina Tweener: time-based (getTimer), auto-overwrite of overlapping
+  // properties on the same scope, start values read on the tween's first
+  // update, onUpdate after each update, onComplete when time runs out.
+  const Tw = {
+    list: [], time: 0, engine: false,
+    eq: {
+      easeoutexpo: (t, b, c, d) => t === d ? b + c : c * 1.001 * (-Math.pow(2, -10 * t / d) + 1) + b,
+      easeinoutquad: (t, b, c, d) => {
+        t = t / (d / 2);
+        if (t < 1) return c / 2 * t * t + b;
+        --t;
+        return -c / 2 * (t * (t - 2) - 1) + b;
+      }
+    },
+    add(scope, o){
+      if (!this.engine) { this.engine = true; this.list = []; this.time = performance.now(); }
+      const delay = o.delay || 0;
+      const timeStart = this.time + delay * 1000;
+      const timeComplete = this.time + (delay + o.time) * 1000;
+      const props = {};
+      for (const k of Object.keys(o.props)) props[k] = { start: NaN, end: o.props[k] };
+      this.removeByTime(scope, props, timeStart, timeComplete);
+      this.list.push({
+        scope, props, timeStart, timeComplete, started: false,
+        trans: this.eq[(o.transition || 'easeOutExpo').toLowerCase()],
+        onUpdate: o.onUpdate, onComplete: o.onComplete
+      });
+    },
+    removeByTime(scope, props, timeStart, timeComplete){
+      for (let i = 0; i < this.list.length; i++) {
+        const tw = this.list[i];
+        if (!tw || tw.scope !== scope) continue;
+        if (!(timeComplete > tw.timeStart && timeStart < tw.timeComplete)) continue;
+        let removed = false;
+        for (const k of Object.keys(tw.props)) if (props[k]) { delete tw.props[k]; removed = true; }
+        if (removed && Object.keys(tw.props).length === 0) this.list[i] = null;
+      }
+    },
+    remove(scope, ...names){
+      for (let i = 0; i < this.list.length; i++) {
+        const tw = this.list[i];
+        if (!tw || tw.scope !== scope) continue;
+        if (names.length === 0) { this.list[i] = null; continue; }
+        for (const k of names) delete tw.props[k];
+        if (Object.keys(tw.props).length === 0) this.list[i] = null;
+      }
+    },
+    update(){
+      if (!this.engine) return;
+      this.time = performance.now();
+      if (this.list.length === 0) { this.engine = false; return; }
+      for (let i = 0; i < this.list.length; i++) {
+        if (this.list[i] && !this.step(this.list[i])) this.list[i] = null;
+        if (this.list[i] == null) { this.list.splice(i, 1); i--; }
+      }
+    },
+    step(tw){
+      const c = this.time;
+      if (c < tw.timeStart) return true;
+      const over = c >= tw.timeComplete;
+      if (!tw.started) {
+        for (const k of Object.keys(tw.props)) {
+          const v = Number(tw.scope[k]);
+          tw.props[k].start = isNaN(v) ? tw.props[k].end : v;
+        }
+        tw.started = true;
+      }
+      for (const k of Object.keys(tw.props)) {
+        const p = tw.props[k];
+        tw.scope[k] = over ? p.end : tw.trans(c - tw.timeStart, p.start, p.end - p.start, tw.timeComplete - tw.timeStart);
+      }
+      if (tw.onUpdate) tw.onUpdate();
+      if (over && tw.onComplete) tw.onComplete();
+      return !over;
+    }
+  };
+
+  // SimplePlayer as a DisplayObject: a Sprite whose only child is the Video,
+  // which onMetaData (autoSize) sizes to the stream's native WxH, so the
+  // Sprite's width/height are native size times its own scale.
+  const zPlayer = {
+    nw: 1, nh: 1, scaleX: 1, scaleY: 1,
+    get width(){ return this.nw * this.scaleX; },
+    set width(v){ this.scaleX = v / this.nw; },
+    get height(){ return this.nh * this.scaleY; },
+    set height(v){ this.scaleY = v / this.nh; }
+  };
+
+  // The Zoetrope sprite: x/y on the stage, its _bmpData, and its clip rect.
+  const zoe = {
+    x: 0, y: 0, bmpW: 1920, bmpH: 1440,
+    frameWidth: 120, frameHeight: 120, cropX: 0, cropY: 0,
+    direction: ZD.BOTTOM_LEFT, running: false, ready: false
+  };
+
+  // YooouuuTuuube instance fields (the Tweener scope for frame/crop tweens).
+  const Z = {
+    frameWidth: 120, frameHeight: 120, cropX: 0, cropY: 0,
+    initialFrameWidth: 120, initialFrameHeight: 120, initialDirection: ZD.BOTTOM_LEFT,
+    playerMaxWidth: 0, playerMaxHeight: 0, minFrameWidth: 1,
+    dragPoint: null, currentDragPoint: null, cropRatios: null,
+    initialDragFrameWidth: 0, initialDragFrameHeight: 0,
+    fluxMode: false, isPaused: false, pausedState: null,
+    processFrame: [],      // ZoetropeEvent.PROCESS_FRAME listeners, in registration order
+    mouseListeners: false, // stage MOUSE_DOWN/MOUSE_UP -> startDragging/stopDragging
+    mouseX: 0, mouseY: 0
+  };
+
+  // flashvars, as the landing-page form posted them
+  const zParams = { width: '96', height: '96', direction: 'rand', flux: '1' };
+
+  const zA = document.createElement('canvas');
+  const zB = document.createElement('canvas');
+  const zR = document.createElement('canvas');
+  let zCurrent = { canvas: zA, ctx: zA.getContext('2d') };
+  let zScratch = { canvas: zB, ctx: zB.getContext('2d') };
+  const zReturns = { canvas: zR, ctx: zR.getContext('2d') };
+
+  function zListen(fn){ if (!Z.processFrame.includes(fn)) Z.processFrame.push(fn); }
+  function zUnlisten(fn){ Z.processFrame = Z.processFrame.filter(f => f !== fn); }
+
+  // ---- Zoetrope.as ----
+
+  function zoeSetClipRect(x, y, w, h){
+    zoe.frameWidth = w;
+    zoe.frameHeight = h;
+    zoe.cropX = x;
+    zoe.cropY = y;
+  }
+
+  function zoeClear(){
+    zCurrent.ctx.fillStyle = '#000';
+    zCurrent.ctx.fillRect(0, 0, zoe.bmpW, zoe.bmpH);
+  }
+
+  function zoeEnterFrame(){
+    const W = zoe.bmpW, H = zoe.bmpH;
+    const fw = zoe.frameWidth, fh = zoe.frameHeight;
+    const rows = Math.ceil(H / fh);
+    const cols = Math.ceil(W / fw);
+    switch (zoe.direction) {
+      case ZD.BOTTOM_LEFT: case ZD.BOTTOM_RIGHT: case ZD.TOP_LEFT: case ZD.TOP_RIGHT:
+        if (cols === 1) zoe.direction = ZD.RIGHT_UP;
+        break;
+      case ZD.LEFT_DOWN: case ZD.LEFT_UP: case ZD.RIGHT_DOWN: case ZD.RIGHT_UP:
+        if (rows === 1) zoe.direction = ZD.BOTTOM_LEFT;
+    }
+    const d = zoe.direction;
+
+    // `returns` holds the strip that falls off the far edge of the scroll.
+    // A zero-sized BitmapData throws an ArgumentError, which aborts the rest
+    // of the handler (no scroll, no draw, no PROCESS_FRAME). That is the
+    // original's behaviour and is kept.
+    const rw = zdIsHorizontal(d) ? fw : W - fw;
+    const rh = zdIsHorizontal(d) ? H - fh : fh;
+    if (!(Math.trunc(rw) > 0 && Math.trunc(rh) > 0)) return;
+
+    let copyX, copyY, pasteX, pasteY;
+    switch (d) {
+      case ZD.BOTTOM_LEFT:  copyX = 0;      copyY = fh;     pasteX = W - fw; pasteY = 0;      break;
+      case ZD.BOTTOM_RIGHT: copyX = W - fw; copyY = fh;     pasteX = 0;      pasteY = 0;      break;
+      case ZD.TOP_LEFT:     copyX = 0;      copyY = 0;      pasteX = W - fw; pasteY = fh;     break;
+      case ZD.TOP_RIGHT:    copyX = W - fw; copyY = 0;      pasteX = 0;      pasteY = fh;     break;
+      case ZD.LEFT_DOWN:    copyX = 0;      copyY = H - fh; pasteX = fw;     pasteY = 0;      break;
+      case ZD.LEFT_UP:      copyX = 0;      copyY = 0;      pasteX = fw;     pasteY = H - fh; break;
+      case ZD.RIGHT_DOWN:   copyX = fw;     copyY = H - fh; pasteX = 0;      pasteY = 0;      break;
+      case ZD.RIGHT_UP:     copyX = fw;     copyY = 0;      pasteX = 0;      pasteY = H - fh;
+    }
+    zReturns.ctx.drawImage(zCurrent.canvas, copyX, copyY, rw, rh, 0, 0, rw, rh);
+
+    // BitmapData.scroll(): shift by one frame. The edge it uncovers keeps
+    // its old pixels; it does not wrap.
+    let sx = 0, sy = 0;
+    switch (d) {
+      case ZD.BOTTOM_LEFT: case ZD.TOP_LEFT: sx = -fw; break;
+      case ZD.BOTTOM_RIGHT: case ZD.TOP_RIGHT: sx = fw; break;
+      case ZD.LEFT_UP: case ZD.RIGHT_UP: sy = -fh; break;
+      case ZD.LEFT_DOWN: case ZD.RIGHT_DOWN: sy = fh;
+    }
+    const sctx = zScratch.ctx;
+    sctx.drawImage(zCurrent.canvas, 0, 0);
+    sctx.drawImage(zCurrent.canvas, sx, sy);
+
+    let tx = 0, ty = 0;
+    switch (d) {
+      case ZD.RIGHT_UP: case ZD.BOTTOM_LEFT: tx = W - fw; ty = H - fh; break;
+      case ZD.TOP_LEFT: case ZD.RIGHT_DOWN: tx = W - fw; ty = 0; break;
+      case ZD.LEFT_UP: case ZD.BOTTOM_RIGHT: tx = 0; ty = H - fh; break;
+      case ZD.LEFT_DOWN: case ZD.TOP_RIGHT: tx = 0; ty = 0;
+    }
+    // drawMatrix: translate to (corner - crop) / playerScale, then
+    // scale(playerScale), which also scales tx/ty. The player is drawn at its
+    // current display size, clipped to the frameWidth x frameHeight rect.
+    const a = zPlayer.scaleX, dd = zPlayer.scaleY;
+    const mtx = (tx - zoe.cropX) / a * a;
+    const mty = (ty - zoe.cropY) / dd * dd;
+    sctx.save();
+    sctx.beginPath();
+    sctx.rect(mtx + zoe.cropX, mty + zoe.cropY, fw, fh);
+    sctx.clip();
+    sctx.drawImage(video, mtx, mty, zPlayer.nw * a, zPlayer.nh * dd);
+    sctx.restore();
+
+    sctx.drawImage(zReturns.canvas, 0, 0, rw, rh, pasteX, pasteY, rw, rh);
+
+    const tmp = zCurrent; zCurrent = zScratch; zScratch = tmp;
+
+    for (const fn of Z.processFrame.slice()) fn();
+  }
+
+  // ---- YooouuuTuuube.as ----
+
+  function zUpdateZoeClipRect(skipResize){
+    if (!skipResize) {
+      if (zPlayer.width < Math.round(Z.frameWidth) + Math.round(Z.cropX)) {
+        zPlayer.width = Math.round(Z.frameWidth) + Math.round(Z.cropX);
+        zPlayer.scaleY = zPlayer.scaleX;
+      }
+      if (zPlayer.height < Math.round(Z.frameHeight) + Math.round(Z.cropY)) {
+        zPlayer.height = Math.round(Z.frameHeight) + Math.round(Z.cropY);
+        zPlayer.scaleX = zPlayer.scaleY;
+      }
+    }
+    zoeSetClipRect(Math.round(Z.cropX), Math.round(Z.cropY), Math.round(Z.frameWidth), Math.round(Z.frameHeight));
+  }
+
+  function zOnZoeProcessFrame(){ zUpdateZoeClipRect(); }
+
+  function zLayout(instant){
+    const sw = canvas.width, sh = canvas.height;
+    let newX = 0, newY = 0;
+    switch (zoe.direction) {
+      case ZD.RIGHT_UP: case ZD.BOTTOM_LEFT: newX = sw - zoe.bmpW; newY = sh - zoe.bmpH; break;
+      case ZD.TOP_LEFT: case ZD.RIGHT_DOWN: newX = sw - zoe.bmpW; newY = 0; break;
+      case ZD.LEFT_UP: case ZD.BOTTOM_RIGHT: newX = 0; newY = sh - zoe.bmpH; break;
+      case ZD.LEFT_DOWN: case ZD.TOP_RIGHT: newX = 0; newY = 0;
+    }
+    if (instant) { zoe.x = newX; zoe.y = newY; }
+    else Tw.add(zoe, { time: NEW_DIR_TRANS_TIME, props: { x: newX, y: newY } });
+  }
+
+  function zSetNewDirection(dir, doClear = true){
+    if (doClear) zoeClear();
+    zoe.direction = dir ? dir : zdPick(ZD_ALL, zoe.direction);
+    zLayout(false);
+  }
+
+  function zStartDragging(){
+    Z.initialDragFrameWidth = zoe.frameWidth;
+    Z.initialDragFrameHeight = zoe.frameHeight;
+    Z.dragPoint = { x: Z.mouseX, y: Z.mouseY };
+    Z.currentDragPoint = { x: 0, y: 0 };
+    Z.cropRatios = { x: 0.5, y: 0.5 };
+    zUnlisten(zOnZoeProcessFrame);
+    zListen(zDrag);
+    Tw.remove(Z);
+    Tw.remove(zPlayer);
+    Tw.add(zPlayer, { time: DRAG_TRANSITION_TIME, props: { width: Z.playerMaxWidth, height: Z.playerMaxHeight } });
+  }
+
+  function zDrag(onCompleteFunc){
+    if (!Z.dragPoint) return; // AS3 would throw on the null _dragPoint here
+    let xDir = 0, yDir = 0;
+    switch (zoe.direction) {
+      case ZD.RIGHT_UP: case ZD.BOTTOM_LEFT: xDir = -1; yDir = -1; break;
+      case ZD.TOP_LEFT: case ZD.RIGHT_DOWN: xDir = -1; yDir = 1; break;
+      case ZD.LEFT_UP: case ZD.BOTTOM_RIGHT: xDir = 1; yDir = -1; break;
+      case ZD.LEFT_DOWN: case ZD.TOP_RIGHT: xDir = 1; yDir = 1;
+    }
+    let newFrameW = Math.round(Z.initialDragFrameWidth + xDir * (Z.mouseX - Z.dragPoint.x));
+    let newFrameH = Math.round(Z.initialDragFrameHeight + yDir * (Z.mouseY - Z.dragPoint.y));
+    if (newFrameW > Z.playerMaxWidth) newFrameW = Z.playerMaxWidth;
+    else if (newFrameW < Z.minFrameWidth) newFrameW = Z.minFrameWidth;
+    if (newFrameH > Z.playerMaxHeight) newFrameH = Z.playerMaxHeight;
+    else if (newFrameH < Z.minFrameWidth) newFrameH = Z.minFrameWidth;
+    Tw.remove(Z, 'frameHeight', 'frameWidth');
+    Tw.add(Z, { time: DRAG_TRANSITION_TIME, props: { frameWidth: newFrameW, frameHeight: newFrameH }, onComplete: onCompleteFunc });
+    const dragVelX = Z.mouseX - Z.currentDragPoint.x;
+    const dragVelY = Z.mouseY - Z.currentDragPoint.y;
+    Z.currentDragPoint.x = Z.mouseX;
+    Z.currentDragPoint.y = Z.mouseY;
+    if (dragVelX > 50 || dragVelX < -50) Z.cropRatios.x = randRange(0, 1);
+    else if (dragVelY < -50 || dragVelY > 50) Z.cropRatios.y = randRange(0, 1);
+    const cX = ((Z.playerMaxWidth - newFrameW) * Z.cropRatios.x) >>> 0;  // uint
+    const cY = ((Z.playerMaxHeight - newFrameH) * Z.cropRatios.y) >>> 0;
+    Tw.remove(Z, 'cropX', 'crop'); // sic: "crop", not "cropY"
+    Tw.add(Z, { time: DRAG_TRANSITION_TIME, props: { cropX: cX, cropY: cY } });
+    zUpdateZoeClipRect();
+  }
+
+  function zStopDragging(){
+    zUnlisten(zDrag);
+    zListen(zOnZoeProcessFrame);
+    zDrag(zTweenFrameSize);
+  }
+
+  function zStartFlux(){
+    Z.fluxMode = true;
+    Tw.remove(Z);
+    Tw.remove(zPlayer);
+    zListen(zOnZoeProcessFrame);
+    Z.mouseListeners = true;
+    zTweenFrameSize();
+  }
+
+  function zStopFlux(){
+    Z.fluxMode = false;
+    Tw.remove(Z);
+    Tw.remove(zPlayer);
+    zUnlisten(zDrag);
+    zUnlisten(zOnZoeProcessFrame);
+    Z.mouseListeners = false;
+  }
+
+  function zTweenFrameSize(){
+    let newFrameW, newFrameH;
+    const delay = 0;
+    const scaleRatio = randRange(0.95, 1);
+    const newPlayerW = (Z.playerMaxWidth * scaleRatio) >>> 0;  // uint
+    const newPlayerH = (Z.playerMaxHeight * scaleRatio) >>> 0;
+    const rand = Math.random();
+    if (rand < 0.7) {
+      newFrameW = randRange(Z.minFrameWidth, newPlayerW);
+      newFrameH = randRange(Z.minFrameWidth, newPlayerH);
+    } else if (rand > 0.91) {
+      newFrameW = newPlayerW;
+      newFrameH = newPlayerH;
+    } else if (zdIsHorizontal(zoe.direction)) {
+      newFrameW = randRange(Z.minFrameWidth, newPlayerW);
+      newFrameH = randRange(Z.minFrameWidth, Z.minFrameWidth + randRange(0, 10));
+    } else {
+      newFrameW = randRange(Z.minFrameWidth, Z.minFrameWidth + randRange(0, 10));
+      newFrameH = randRange(Z.minFrameWidth, newPlayerH);
+    }
+    const cropX = randRange(0, newPlayerW - newFrameW);
+    const cropY = randRange(0, newPlayerH - newFrameH);
+    const t = randRange(AUTO_TWEEN_TIME_MIN, AUTO_TWEEN_TIME_MAX);
+    Tw.add(zPlayer, { time: t, delay, transition: 'easeInOutQuad', props: { width: newPlayerW, height: newPlayerH } });
+    Tw.add(Z, {
+      time: t, delay, transition: 'easeInOutQuad',
+      props: { frameWidth: newFrameW, frameHeight: newFrameH, cropX, cropY },
+      onComplete: zTweenFrameSize
+    });
+    if (Math.random() > 0.8) zSetNewDirection(zdPick(ZD_ALL), false);
+  }
+
+  function zStart(){
+    zoe.running = true;
+    if (Z.fluxMode) zStartFlux();
+  }
+
+  function zStop(){
+    zoe.running = false;
+    zStopFlux();
+  }
+
+  // Video play/pause is left to the caller (setRunning).
+  function zTogglePause(){
+    if (!Z.isPaused) {
+      Z.pausedState = { fluxMode: Z.fluxMode };
+      zStop();
+    } else {
+      Z.fluxMode = Z.pausedState.fluxMode;
+      if (!Z.fluxMode) zStopFlux();
+      zStart();
+    }
+    Z.isPaused = !Z.isPaused;
+  }
+
+  function zToggleFluxMode(){
+    if (Z.fluxMode) zStopFlux();
+    else zStartFlux();
+    if (Z.isPaused) Z.pausedState.fluxMode = !Z.pausedState.fluxMode;
+    zSyncFluxUi();
+  }
+
+  function zReset(){
+    if (Z.fluxMode) zStopFlux();
+    if (Z.pausedState) Z.pausedState.fluxMode = Z.fluxMode;
+    Tw.add(zPlayer, { time: 2, props: { width: Z.initialFrameWidth, height: Z.initialFrameHeight } });
+    Tw.add(Z, {
+      time: 2,
+      props: { frameWidth: Z.initialFrameWidth, frameHeight: Z.initialFrameHeight, cropX: 0, cropY: 0 },
+      onUpdate: () => zUpdateZoeClipRect(true)
+    });
+    zSetNewDirection(Z.initialDirection, false);
+    zSyncFluxUi();
+  }
+
+  // Constructor + onPlayerReady: a fresh SWF instance for the current video
+  // and flashvars.
+  function zInit(){
+    Tw.list = []; Tw.engine = false;
+    Z.frameWidth = 120; Z.frameHeight = 120; Z.cropX = 0; Z.cropY = 0; Z.minFrameWidth = 1;
+    Z.processFrame = []; Z.mouseListeners = false; Z.dragPoint = null;
+    Z.isPaused = false; Z.pausedState = null;
+
+    const pDir = zParams.direction;
+    Z.initialDirection = pDir === '' || pDir === 'rand' ? zdPick(ZD_ALL) : pDir;
+    if (!ZD_ALL.includes(Z.initialDirection)) Z.initialDirection = zdPick(ZD_ALL);
+    Z.fluxMode = Number(zParams.flux) === 1;
+    const pW = Number(zParams.width), pH = Number(zParams.height);
+    Z.initialFrameWidth = Z.frameWidth = isNaN(pW) ? Z.frameWidth : pW;
+    Z.initialFrameHeight = Z.frameHeight = isNaN(pH) ? Z.frameHeight : pH;
+    Z.minFrameWidth = Math.min(Math.min(Z.frameWidth, Z.frameHeight), Z.minFrameWidth);
+
+    zoe.bmpW = 1920; zoe.bmpH = 1440;
+    if (screen.width > zoe.bmpW) zoe.bmpW = screen.width > 2880 ? 2880 : screen.width >>> 0;
+    if (screen.height > zoe.bmpH) zoe.bmpH = screen.height > 2880 ? 2880 : screen.height >>> 0;
+
+    // onPlayerReady (META_DATA)
+    zPlayer.nw = video.videoWidth; zPlayer.nh = video.videoHeight;
+    zPlayer.scaleX = zPlayer.scaleY = 1;
+    Z.playerMaxWidth = Math.max(zPlayer.width, Z.frameWidth);
+    Z.playerMaxHeight = Math.max(zPlayer.height, Z.frameHeight);
+    if (Z.playerMaxWidth > MAX_FRAME_WIDTH) Z.playerMaxWidth = MAX_FRAME_WIDTH;
+    if (Z.playerMaxHeight > MAX_FRAME_HEIGHT) Z.playerMaxHeight = MAX_FRAME_HEIGHT;
+    Z.frameWidth = isNaN(pW) || pW > Z.playerMaxWidth || pW < Z.minFrameWidth ? Z.playerMaxWidth : pW;
+    Z.frameHeight = isNaN(pH) || pH > Z.playerMaxHeight || pH < Z.minFrameWidth ? Z.playerMaxHeight : pH;
+    zPlayer.width = Z.frameWidth;
+    zPlayer.height = Z.frameHeight;
+
+    // new Zoetrope(player, zoeWidth, zoeHeight, Rectangle(cropX, cropY, fw, fh))
+    for (const c of [zA, zB, zR]) { c.width = zoe.bmpW; c.height = zoe.bmpH; }
+    for (const c of [zCurrent.ctx, zScratch.ctx, zReturns.ctx]) c.imageSmoothingEnabled = false;
+    zoeClear();
+    zoeSetClipRect(Z.cropX, Z.cropY, Z.frameWidth, Z.frameHeight);
+    zoe.direction = Z.initialDirection;
+    zLayout(true);
+    zStart();
+    zoe.ready = true;
+    zSyncFluxUi();
+  }
+
+  function zSyncFluxUi(){
+    const el = document.getElementById('zFlux');
+    if (el) el.checked = Z.fluxMode;
+    zParams.flux = Z.fluxMode ? '1' : '';
+  }
+
+  function zSizeStage(){
+    canvas.width = Math.max(1, stage.clientWidth);
+    canvas.height = Math.max(1, stage.clientHeight);
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  function zRenderStage(){
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (zoe.ready) ctx.drawImage(zCurrent.canvas, zoe.x, zoe.y);
+  }
+
+  function resizeZoetropeCanvas(){
+    zSizeStage();
+    zoe.ready = false;
+    zoe.running = false;
+    if (video.videoWidth && video.videoHeight) zInit();
+    zRenderStage();
+  }
+
+  // One Flash frame: Zoetrope's ENTER_FRAME (registered first), then
+  // Tweener's ENTER_FRAME, then the stage renders.
+  function renderZoetrope(){
+    if (!zoe.ready) return;
+    if (zoe.running) zoeEnterFrame();
+    Tw.update();
+    zRenderStage();
+    if (framesWritten % 4 === 0) {
+      document.getElementById('zState').textContent =
+        `${zoe.direction} · frame ${zoe.frameWidth}×${zoe.frameHeight} · crop ${zoe.cropX},${zoe.cropY}`;
+    }
+  }
+
+  function sizeToViewport(){
+    if (mode === 'zoetrope') {
+      // The SWF ran NO_SCALE at 100% x 100%: the stage is the window, 1:1.
+      // A resize re-runs layout(true) (onStageResize).
+      zSizeStage();
+      if (zoe.ready) zLayout(true);
+      zRenderStage();
+      view.x = 0; view.y = 0; view.scale = 1;
+      applyTransform();
+      return;
+    }
+    const maxW = window.innerWidth * 0.86;
+    const maxH = window.innerHeight * 0.86;
+    const scale = Math.min(maxW / canvas.width, maxH / canvas.height, 1.4);
+    view.scale = scale;
+    applyTransform();
+  }
+
+  const view = { x: 0, y: 0, scale: 1 };
+  function applyTransform(){
+    world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.scale})`;
+  }
+
+  function setFeedbackOffsetFromEvent(e){
+    const rect = canvas.getBoundingClientRect();
+    fb.mouseRatioX = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    fb.mouseRatioY = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+  }
+
+  let dragging = false, lastX = 0, lastY = 0, downX = 0, downY = 0, downTime = 0, moved = 0;
+  stage.addEventListener('pointerdown', (e) => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY;
+    downX = e.clientX; downY = e.clientY; downTime = performance.now(); moved = 0;
+    stage.classList.add('dragging');
+    stage.setPointerCapture(e.pointerId);
+    if (mode === 'feedback') setFeedbackOffsetFromEvent(e);
+    if (mode === 'zoetrope') {
+      setZoeMouse(e);
+      if (zoe.ready && Z.mouseListeners) zStartDragging();
+    }
+  });
+  // Flash's mouseX/mouseY: stage coordinates, always current.
+  function setZoeMouse(e){
+    const rect = canvas.getBoundingClientRect();
+    Z.mouseX = e.clientX - rect.left;
+    Z.mouseY = e.clientY - rect.top;
+  }
+  window.addEventListener('pointermove', (e) => { if (mode === 'zoetrope') setZoeMouse(e); });
+  stage.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    moved += Math.abs(e.clientX - lastX) + Math.abs(e.clientY - lastY);
+    if (mode === 'feedback') {
+      setFeedbackOffsetFromEvent(e);
+    } else if (mode === 'mosaic') {
+      mosaicView.dX += (e.clientX - lastX);
+      mosaicView.dY += (e.clientY - lastY);
+      mosaicView.targetScale = 0.6;
+    }
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  stage.addEventListener('pointerup', (e) => {
+    dragging = false; stage.classList.remove('dragging');
+    if (mode === 'mosaic') mosaicView.targetScale = 1;
+    if (mode === 'zoetrope') {
+      setZoeMouse(e);
+      if (zoe.ready && Z.mouseListeners) zStopDragging();
+    }
+  });
+
+  // UI auto-hide, as in all three SWFs: HIDE_UI_TIME seconds without mouse
+  // movement fades the UI out (0.2 s linear) and hides the cursor; any move
+  // brings both back at once. Zoetrope drops the move listener while a flux
+  // drag is in progress. Extras: never hides with nothing loaded or while
+  // typing in the panel, and H keeps it hidden until pressed again.
+  const HIDE_UI_TIME = 4;
+  let uiHideTimer = null, uiPinnedHidden = false;
+  function uiCanAutoHide(){
+    if (!empty.classList.contains('hidden')) return false;
+    const a = document.activeElement;
+    return !(a && a.closest('#console') && (a.tagName === 'SELECT' || (a.tagName === 'INPUT' && a.type === 'text')));
+  }
+  function setUiHidden(h){ document.body.classList.toggle('ui-hidden', h); }
+  function resetUIHideTimer(){
+    if (uiPinnedHidden) return;
+    setUiHidden(false);
+    clearTimeout(uiHideTimer);
+    uiHideTimer = setTimeout(function onHideUITimer(){
+      if (uiCanAutoHide()) setUiHidden(true);
+      uiHideTimer = setTimeout(onHideUITimer, HIDE_UI_TIME * 1000);
+    }, HIDE_UI_TIME * 1000);
+  }
+  window.addEventListener('pointermove', () => {
+    if (dragging && mode === 'zoetrope' && Z.fluxMode) return;
+    resetUIHideTimer();
+  });
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'h' && e.key !== 'H') return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    uiPinnedHidden = !uiPinnedHidden;
+    if (uiPinnedHidden) { clearTimeout(uiHideTimer); setUiHidden(true); }
+    else resetUIHideTimer();
+  });
+  resetUIHideTimer();
+
+  // onPlayingKeyDown / onPausedKeyDown
+  window.addEventListener('keydown', (e) => {
+    if (mode !== 'zoetrope' || !zoe.ready) return;
+    if (/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(e.target.tagName)) return;
+    if (Z.isPaused) {
+      if (e.key === 'Delete') setRunning(true);
+      return;
+    }
+    switch (e.key) {
+      case ' ': zToggleFluxMode(); break;
+      case 'ArrowUp': zSetNewDirection(zdPick([ZD.LEFT_UP, ZD.RIGHT_UP], zoe.direction), false); break;
+      case 'ArrowDown': zSetNewDirection(zdPick([ZD.LEFT_DOWN, ZD.RIGHT_DOWN], zoe.direction), false); break;
+      case 'ArrowLeft': zSetNewDirection(zdPick([ZD.TOP_LEFT, ZD.BOTTOM_LEFT], zoe.direction), false); break;
+      case 'ArrowRight': zSetNewDirection(zdPick([ZD.TOP_RIGHT, ZD.BOTTOM_RIGHT], zoe.direction), false); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.0012;
+    if (mode === 'feedback') {
+      fb.scale = Math.min(0.95, Math.max(0.8, fb.scale * (1 + delta)));
+      document.getElementById('fbScale').value = fb.scale;
+      document.getElementById('fbScaleVal').textContent = fb.scale.toFixed(2);
+    }
+  }, { passive: false });
+
+  document.getElementById('resetView').addEventListener('click', () => {
+    fb.sinkX = 0.5; fb.sinkY = 0.5; fb.mouseRatioX = 0.5; fb.mouseRatioY = 0.5; fb.matX = 0; fb.matY = 0;
+    mosaicView.dX = 0; mosaicView.dY = 0; mosaicView.scale = 1; mosaicView.targetScale = 1;
+    if (mode === 'zoetrope' && zoe.ready) zReset();
+    sizeToViewport();
+  });
+
+  let raf = null;
+  let lastSimTime = 0;
+  // Each SWF's declared frameRate: Feedback and Mosaic 30, Zoetrope 40.
+  const SIM_FPS = { feedback: 30, mosaic: 30, zoetrope: 40 };
+  function tick(now){
+    if (running && video.readyState >= 2 && !video.paused && now !== undefined){
+      const step = 1000 / SIM_FPS[mode];
+      // Advance by whole steps so the rate holds on any refresh rate (40fps
+      // on a 60Hz display renders 2 of every 3 vsyncs); drop any backlog.
+      if (!lastSimTime || now - lastSimTime >= step - 1) {
+        lastSimTime = lastSimTime && now - lastSimTime < 2 * step ? lastSimTime + step : now;
+        if (mode === 'feedback') renderFeedback();
+        else if (mode === 'mosaic') renderMosaic();
+        else renderZoetrope();
+        framesWritten++;
+        frameCountEl.textContent = framesWritten;
+      }
+    }
+    raf = requestAnimationFrame(tick);
+  }
+
+  function startIfReady(){
+    empty.classList.add('hidden');
+    if (mode === 'feedback') resizeFeedbackCanvas();
+    else if (mode === 'mosaic') resizeMosaicCanvas();
+    else resizeZoetropeCanvas();
+    sizeToViewport();
+    video.play().catch(() => setStatus('autoplay blocked — click Play', 'err'));
+    setStatus('streaming', 'ok');
+  }
+
+  video.addEventListener('loadeddata', startIfReady);
+  video.addEventListener('error', () => {
+    const codes = {1:'aborted',2:'network error',3:'decode error',4:'source not supported'};
+    const code = video.error && video.error.code;
+    setStatus('load failed' + (code ? ' — ' + (codes[code] || 'code ' + code) : ''), 'err');
+  });
+
+  // Page links (YouTube, Vimeo) aren't media files; serve.py turns them into
+  // one with yt-dlp. Bare 11-char strings are treated as YouTube ids, like
+  // the original form's id field.
+  const RESOLVE_HOSTS = /^(www\.|m\.|music\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)$/;
+  function needsResolver(url){
+    if (/^[\w-]{11}$/.test(url)) return true;
+    try { return RESOLVE_HOSTS.test(new URL(url).hostname); } catch (e) { return false; }
+  }
+  let loadSeq = 0;
+  async function loadUrl(url){
+    if (!url) return;
+    const seq = ++loadSeq;
+    let audioUrl = null;
+    framesWritten = 0;
+    if (needsResolver(url)) {
+      if (/^[\w-]{11}$/.test(url)) url = 'https://www.youtube.com/watch?v=' + url;
+      if (location.protocol === 'file:') {
+        setStatus('page links need serve.py — run python3 serve.py', 'err');
+        return;
+      }
+      setStatus('resolving via yt-dlp…');
+      try {
+        const res = await fetch('resolve?url=' + encodeURIComponent(url));
+        const body = await res.json().catch(() => ({ error: 'server has no /resolve — run serve.py' }));
+        if (seq !== loadSeq) return;
+        if (!res.ok || !body.src) { setStatus(body.error || 'resolve failed', 'err'); return; }
+        url = body.src;
+        audioUrl = body.audio;
+      } catch (e) {
+        if (seq === loadSeq) setStatus('resolver unreachable — run serve.py', 'err');
+        return;
+      }
+    }
+    setStatus('loading…');
+    setAudioSrc(audioUrl);
+    video.src = url;
+    video.load();
+  }
+
+  document.getElementById('loadBtn').addEventListener('click', () => {
+    loadUrl(document.getElementById('urlInput').value.trim());
+  });
+  document.getElementById('urlInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loadUrl(e.target.value.trim());
+  });
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    framesWritten = 0;
+    loadSeq++;
+    setAudioSrc(null);
+    setStatus('loading local file…');
+    video.src = URL.createObjectURL(f);
+    video.load();
+    document.getElementById('urlInput').value = '';
+  });
+
+  function setRunning(next){
+    running = next;
+    document.getElementById('playBtn').textContent = running ? 'Pause' : 'Play';
+    // Zoetrope: the original's togglePause (stops the zoetrope and flux tweens,
+    // restores flux on resume).
+    if (mode === 'zoetrope' && zoe.ready && Z.isPaused === running) zTogglePause();
+    if (running) video.play().catch(()=>{});
+    else video.pause();
+  }
+  document.getElementById('playBtn').addEventListener('click', () => setRunning(!running));
+
+  window.addEventListener('resize', () => sizeToViewport());
+
+  resizeFeedbackCanvas();
+  tick();
+
+  window.__md = {
+    video, audio, fb, zoe, Z, zPlayer, zParams, Tw, mosaicView, getMode: () => mode, framesWritten: () => framesWritten,
+    zCurrentCanvas: () => zCurrent.canvas
+  };
+
+  const qs = new URLSearchParams(window.location.search);
+
+  const qMode = qs.get('mode');
+  if (qMode === 'feedback' || qMode === 'mosaic' || qMode === 'zoetrope') setMode(qMode);
+
+  const qFbScale = qs.get('fbScale');
+  if (qFbScale !== null) {
+    fb.scale = Math.min(0.95, Math.max(0.8, Number(qFbScale)));
+    document.getElementById('fbScale').value = fb.scale;
+    document.getElementById('fbScaleVal').textContent = fb.scale.toFixed(2);
+  }
+
+  // Zoetrope flashvars. zCell (old) sets both; old direction names still map.
+  const qZWidth = qs.get('zWidth') ?? qs.get('zCell');
+  const qZHeight = qs.get('zHeight') ?? qs.get('zCell');
+  if (qZWidth !== null) { zParams.width = qZWidth; setPxSelect('zWidth', qZWidth); }
+  if (qZHeight !== null) { zParams.height = qZHeight; setPxSelect('zHeight', qZHeight); }
+
+  const LEGACY_Z_DIRECTIONS = {
+    'left-top': 'top_left', 'left-bottom': 'bottom_left', 'right-top': 'top_right', 'right-bottom': 'bottom_right',
+    'up-left': 'left_up', 'up-right': 'right_up', 'down-left': 'left_down', 'down-right': 'right_down'
+  };
+  const qZDirection = qs.get('zDirection');
+  if (qZDirection !== null) {
+    zParams.direction = LEGACY_Z_DIRECTIONS[qZDirection] || qZDirection;
+    document.getElementById('zDirection').value = zParams.direction;
+  }
+
+  const qZFlux = qs.get('zFlux');
+  if (qZFlux !== null) {
+    zParams.flux = qZFlux === '1' || qZFlux === 'true' ? '1' : '';
+    document.getElementById('zFlux').checked = zParams.flux === '1';
+  }
+  if (mode === 'zoetrope' && (qZWidth !== null || qZHeight !== null || qZDirection !== null || qZFlux !== null)) {
+    resizeZoetropeCanvas();
+  }
+
+  const qVol = qs.get('vol');
+  if (qVol !== null) {
+    applyVolume(Number(qVol));
+    document.getElementById('vol').value = qVol;
+    document.getElementById('volVal').textContent = qVol;
+  }
+
+  const qUrl = qs.get('url');
+  if (qUrl) {
+    document.getElementById('urlInput').value = qUrl;
+    loadUrl(qUrl);
+  }
+})();
+</script>

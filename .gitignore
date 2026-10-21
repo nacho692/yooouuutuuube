@@ -1,0 +1,14 @@
+# Original SWFs, decompiler and decompiled source (not ours to redistribute)
+*.swf
+ffdec/
+ruffle/
+ruffle-test.html
+crossdomain.xml
+
+# Local test clips (copyrighted)
+pogo-alice.webm
+zoetrope_test.mp4
+
+*.bak-*
+__pycache__/
+cache/
