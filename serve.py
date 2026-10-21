@@ -13,17 +13,26 @@ lacks) on 127.0.0.1, plus one endpoint:
       IP and expire after ~6 h, so they only work on the machine that
       resolved them.
 
-Usage: python3 serve.py [port]   (default 8731)
+Only YouTube and Vimeo links are resolved, at most two at a time, so a
+public deployment can't be used to make yt-dlp fetch arbitrary URLs.
+
+Usage: python3 serve.py [port]   (default 8731; HOST env sets the bind
+address, default 127.0.0.1)
 """
 import json
 import os
 import re
 import subprocess
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+HOST = os.environ.get('HOST', '127.0.0.1')
+# Same hosts the page sends here.
+RESOLVE_HOSTS = re.compile(r'^(www\.|m\.|music\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)$')
+_slots = threading.BoundedSemaphore(2)
 # H.264 so any browser decodes it; capped at 720p.
 FORMAT = ('bv*[vcodec^=avc1][height<=720]+ba[ext=m4a]/'
           'b[ext=mp4][height<=720]/bv*[height<=720]+ba/b')
@@ -51,12 +60,17 @@ class Handler(SimpleHTTPRequestHandler):
         return super().do_GET()
 
     def handle_resolve(self, url):
-        if not re.match(r'^https?://', url):
-            return self.send_json(400, {'error': 'expected an http(s) link'})
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https') or not RESOLVE_HOSTS.match(parsed.hostname or ''):
+            return self.send_json(400, {'error': 'expected a YouTube or Vimeo link'})
+        if not _slots.acquire(timeout=30):
+            return self.send_json(429, {'error': 'resolver busy, try again'})
         try:
             self.send_json(200, resolve(url))
         except Exception as e:  # yt-dlp error or timeout
             self.send_json(502, {'error': str(e)})
+        finally:
+            _slots.release()
 
     def send_json(self, code, obj):
         body = json.dumps(obj).encode()
@@ -117,5 +131,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8731
-    print(f'http://localhost:{port}/mosaic.html')
-    ThreadingHTTPServer(('127.0.0.1', port), Handler).serve_forever()
+    print(f'http://localhost:{port}/')
+    ThreadingHTTPServer((HOST, port), Handler).serve_forever()

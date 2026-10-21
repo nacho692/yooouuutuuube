@@ -8,7 +8,7 @@ archived SWFs.
 ## Running
 
 ```sh
-python3 serve.py        # http://localhost:8731/mosaic.html
+python3 serve.py        # http://localhost:8731/
 ```
 
 Paste a YouTube/Vimeo link (or a bare YouTube id), a direct mp4/webm URL, or

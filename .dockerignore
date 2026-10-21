@@ -1,0 +1,9 @@
+.git
+*.swf
+ffdec/
+ruffle/
+*.webm
+zoetrope_test.mp4
+*.bak-*
+__pycache__/
+cache/
