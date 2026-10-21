@@ -89,6 +89,20 @@
   }
   #soundPrompt[hidden]{display:none;}
 
+  /* Minimize: the panel shrinks to its header row, so the stage can be dragged. */
+  #consoleHead{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  #consoleHead b{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:600;}
+  #minBtn{
+    width:34px; height:34px; padding:0; flex:none;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #minBtn svg{width:16px; height:16px;}
+  #minBtn svg + svg{display:none;}
+  #console.min{width:auto; padding:6px 6px 6px 14px; gap:0; overflow:visible;}
+  #console.min > :not(#consoleHead){display:none !important;}
+  #console.min #minBtn svg{display:none;}
+  #console.min #minBtn svg + svg{display:block;}
+
   #soundPrompt svg{width:18px; height:18px; color:var(--scan); flex:none;}
   @keyframes soundPulse{50%{opacity:.6;}}
 
@@ -187,6 +201,13 @@
 </div>
 
 <div id="console">
+  <div id="consoleHead">
+    <b class="mono">Mosaic Deriva</b>
+    <button id="minBtn" type="button" aria-label="Minimize menu" title="Minimize menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
   <div class="row">
     <label>Media URL</label>
     <input id="urlInput" type="text" placeholder="YouTube link or https://…/video.mp4" autocomplete="off" />
@@ -1223,6 +1244,21 @@
       uiHideTimer = setTimeout(onHideUITimer, HIDE_UI_TIME * 1000);
     }, HIDE_UI_TIME * 1000);
   }
+  function setMinimized(min, remember){
+    document.getElementById('console').classList.toggle('min', min);
+    const b = document.getElementById('minBtn');
+    b.title = b.ariaLabel = min ? 'Show menu' : 'Minimize menu';
+    if (remember) try { localStorage.setItem('menuMin', min ? '1' : '0'); } catch (e) {}
+  }
+  document.getElementById('minBtn').addEventListener('click', () => {
+    setMinimized(!document.getElementById('console').classList.contains('min'), true);
+  });
+  // No saved choice: phones start minimized once a video is playing.
+  let menuChoice = null;
+  try { menuChoice = localStorage.getItem('menuMin'); } catch (e) {}
+  if (menuChoice !== null) setMinimized(menuChoice === '1', false);
+  else video.addEventListener('loadeddata', () => { if (innerWidth <= 520) setMinimized(true, false); }, { once: true });
+
   window.addEventListener('pointermove', () => {
     if (dragging && mode === 'zoetrope' && Z.fluxMode) return;
     resetUIHideTimer();
