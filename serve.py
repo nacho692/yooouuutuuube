@@ -74,7 +74,35 @@ def resolve(url, fmt=''):
     for l in lines:
         if not GOOGLEVIDEO.match(urlparse(l).hostname or ''):
             raise RuntimeError('unexpected stream host')
+    warm(lines)
     return {'src': mint(lines[0]), 'audio': mint(lines[1]) if len(lines) > 1 else None}
+
+
+def warm(urls, limit=45):
+    """Wait until Google starts answering for fresh stream URLs.
+
+    A new googlevideo URL is refused (403) for its first ~20 s, whoever asks;
+    handing it to the player right away makes it fail with "source not
+    supported". Probe each with a 1-byte range until it stops saying 403.
+    """
+    def probe(u):
+        end = time.time() + limit
+        while time.time() < end:
+            req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0', 'Range': 'bytes=0-0'})
+            try:
+                urllib.request.urlopen(req, timeout=15).close()
+                return
+            except urllib.error.HTTPError as e:
+                if e.code != 403:
+                    return
+            except Exception:
+                return
+            time.sleep(1)
+    ts = [threading.Thread(target=probe, args=(u,)) for u in urls]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
 
 
 def mint(url):
