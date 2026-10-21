@@ -88,10 +88,7 @@
     pointer-events:none; animation:soundPulse 1.6s ease-in-out infinite;
   }
   #soundPrompt[hidden]{display:none;}
-  @media (max-width:520px){
-    #console{left:10px; right:10px; bottom:10px; width:auto; max-height:55vh;}
-    #hud{display:none;}
-  }
+
   #soundPrompt svg{width:18px; height:18px; color:var(--scan); flex:none;}
   @keyframes soundPulse{50%{opacity:.6;}}
 
@@ -164,6 +161,10 @@
   }
   ::-webkit-scrollbar{width:8px;}
   ::-webkit-scrollbar-thumb{background:var(--line); border-radius:4px;}
+  @media (max-width:520px){
+    #console{left:10px; right:10px; bottom:10px; width:auto; max-height:55vh;}
+    #hud{display:none;}
+  }
 </style>
 
 <div id="stage">
@@ -314,17 +315,20 @@
   }
   function unblockSound(){
     if (!soundBlocked) return;
-    soundBlocked = false;
-    document.getElementById('soundPrompt').hidden = true;
     applyVolume(volume);
-    if (splitAudio && !video.paused) {
-      audio.currentTime = video.currentTime;
-      audio.play().catch(()=>{});
-    }
-    if (volume > 0) setStatus('streaming', 'ok');
+    const started = splitAudio && !video.paused
+      ? (audio.currentTime = video.currentTime, audio.play())
+      : Promise.resolve();
+    started.then(() => {
+      soundBlocked = false;
+      document.getElementById('soundPrompt').hidden = true;
+      if (volume > 0) setStatus('streaming', 'ok');
+    }, () => {});  // not a counting gesture (e.g. touch press): wait for the next
   }
-  window.addEventListener('pointerdown', unblockSound, true);
-  window.addEventListener('keydown', unblockSound, true);
+  // Chrome counts mouse press, key press and touch *release* as activation,
+  // so listen for all of them and keep the prompt until one works.
+  for (const t of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'])
+    window.addEventListener(t, unblockSound, true);
   video.addEventListener('play', () => { if (splitAudio) { audio.currentTime = video.currentTime; playWithSound(audio).catch(()=>{}); } });
   video.addEventListener('pause', () => { if (splitAudio) audio.pause(); });
   video.addEventListener('waiting', () => { if (splitAudio) audio.pause(); });
