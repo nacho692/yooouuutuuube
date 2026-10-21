@@ -6,12 +6,16 @@ lacks) on 127.0.0.1, plus one endpoint:
 
   GET /resolve?url=<youtube/vimeo/... link>
       Asks yt-dlp for the direct stream URLs and returns
-      {"src": <video url>, "audio": <audio url or null>}. The browser then
-      streams from YouTube itself; nothing passes through this server.
+      {"src": "/p/<token>", "audio": "/p/<token>" or null}.
+  GET /p/<token>
+      Streams the googlevideo URL behind that token (Range passed through).
+      YouTube signs stream URLs for the IP that resolved them and refuses
+      other IPs (or accepts them only after a delay), so the bytes are
+      fetched from here, the machine that resolved them, and relayed.
+      Tokens are random and expire with the URL (~6 h); the real URL never
+      reaches the browser and only *.googlevideo.com is ever fetched.
       YouTube serves video and audio as separate streams, so the page plays
-      the audio in its own element. The URLs are signed for this machine's
-      IP and expire after ~6 h, so they only work on the machine that
-      resolved them.
+      the audio in its own element.
 
 Only YouTube and Vimeo links are resolved, at most two at a time, so a
 public deployment can't be used to make yt-dlp fetch arbitrary URLs.
@@ -22,9 +26,13 @@ address, default 127.0.0.1)
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import threading
+import time
+import urllib.error
+import urllib.request
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -33,6 +41,10 @@ HOST = os.environ.get('HOST', '127.0.0.1')
 # Same hosts the page sends here.
 RESOLVE_HOSTS = re.compile(r'^(www\.|m\.|music\.)?(youtube\.com|youtube-nocookie\.com|youtu\.be|vimeo\.com|player\.vimeo\.com)$')
 _slots = threading.BoundedSemaphore(2)
+GOOGLEVIDEO = re.compile(r'^[\w.-]+\.googlevideo\.com$')
+TOKEN_TTL = 6 * 3600
+_tokens = {}  # token -> (url, expires)
+_tokens_lock = threading.Lock()
 # YouTube-shaped paths (/watch?v=, /shorts/ID, youtu.be-style /ID), so
 # swapping youtube.com for this host in a video link opens it here.
 YT_PATH = re.compile(r'^/(?:watch|(?:shorts/|embed/|live/)?([\w-]{11}))/?$')
@@ -59,7 +71,20 @@ def resolve(url, fmt=''):
     if proc.returncode != 0 or not lines:
         err = [l for l in proc.stderr.splitlines() if 'ERROR' in l]
         raise RuntimeError(err[-1] if err else (proc.stderr.strip()[-300:] or 'yt-dlp failed'))
-    return {'src': lines[0], 'audio': lines[1] if len(lines) > 1 else None}
+    for l in lines:
+        if not GOOGLEVIDEO.match(urlparse(l).hostname or ''):
+            raise RuntimeError('unexpected stream host')
+    return {'src': mint(lines[0]), 'audio': mint(lines[1]) if len(lines) > 1 else None}
+
+
+def mint(url):
+    token = secrets.token_urlsafe(12)
+    now = time.time()
+    with _tokens_lock:
+        for t in [t for t, (_, exp) in _tokens.items() if exp < now]:
+            del _tokens[t]
+        _tokens[token] = (url, now + TOKEN_TTL)
+    return '/p/' + token
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -71,6 +96,8 @@ class Handler(SimpleHTTPRequestHandler):
         if parsed.path == '/resolve':
             q = parse_qs(parsed.query)
             return self.handle_resolve(q.get('url', [''])[0], q.get('fmt', [''])[0])
+        if parsed.path.startswith('/p/'):
+            return self.handle_proxy(parsed.path[3:])
         m = YT_PATH.match(parsed.path)
         if m and not os.path.exists(self.translate_path(parsed.path)):
             q = parse_qs(parsed.query)
@@ -96,6 +123,38 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(502, {'error': str(e)})
         finally:
             _slots.release()
+
+    def handle_proxy(self, token):
+        with _tokens_lock:
+            entry = _tokens.get(token)
+        if not entry or entry[1] < time.time():
+            return self.send_json(404, {'error': 'unknown or expired stream'})
+        req = urllib.request.Request(entry[0], headers={'User-Agent': 'Mozilla/5.0'})
+        if self.headers.get('Range'):
+            req.add_header('Range', self.headers['Range'])
+        try:
+            up = urllib.request.urlopen(req, timeout=30)
+        except urllib.error.HTTPError as e:
+            up = e  # relay 403/416/... as is
+        except Exception as e:
+            return self.send_json(502, {'error': str(e)})
+        self._range = None
+        try:
+            self.send_response(up.status)
+            for h in ('Content-Type', 'Content-Length', 'Content-Range'):
+                if up.headers.get(h):
+                    self.send_header(h, up.headers[h])
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            while True:
+                chunk = up.read(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            pass  # player seeked away or closed
+        finally:
+            up.close()
 
     def send_json(self, code, obj):
         body = json.dumps(obj).encode()
