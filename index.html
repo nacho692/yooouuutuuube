@@ -1090,8 +1090,10 @@
     Z.minFrameWidth = Math.min(Math.min(Z.frameWidth, Z.frameHeight), Z.minFrameWidth);
 
     zoe.bmpW = 1920; zoe.bmpH = 1440;
-    if (screen.width > zoe.bmpW) zoe.bmpW = screen.width > 2880 ? 2880 : screen.width >>> 0;
-    if (screen.height > zoe.bmpH) zoe.bmpH = screen.height > 2880 ? 2880 : screen.height >>> 0;
+    const scrW = Math.max(screen.width * zStageScale(), canvas.width);
+    const scrH = Math.max(screen.height * zStageScale(), canvas.height);
+    if (scrW > zoe.bmpW) zoe.bmpW = scrW > 2880 ? 2880 : scrW >>> 0;
+    if (scrH > zoe.bmpH) zoe.bmpH = scrH > 2880 ? 2880 : scrH >>> 0;
 
     // onPlayerReady (META_DATA)
     zPlayer.nw = video.videoWidth; zPlayer.nh = video.videoHeight;
@@ -1123,9 +1125,20 @@
     zParams.flux = Z.fluxMode ? '1' : '';
   }
 
+  // The SWF assumed a desktop-sized stage. On a phone a 96 px cell is a large
+  // share of the screen and flux cells can outgrow it, so the stage is made
+  // logically larger (short side >= 720) and scaled down to fit. Desktop: 1.
+  // ?zScale=N overrides it.
+  function zStageScale(){
+    const forced = Number(new URLSearchParams(location.search).get('zScale'));
+    if (forced > 0) return forced;
+    return Math.max(1, 720 / Math.min(innerWidth, innerHeight));
+  }
+
   function zSizeStage(){
-    canvas.width = Math.max(1, stage.clientWidth);
-    canvas.height = Math.max(1, stage.clientHeight);
+    const k = zStageScale();
+    canvas.width = Math.max(1, Math.round(stage.clientWidth * k));
+    canvas.height = Math.max(1, Math.round(stage.clientHeight * k));
     ctx.imageSmoothingEnabled = false;
   }
 
@@ -1163,7 +1176,7 @@
       zSizeStage();
       if (zoe.ready) zLayout(true);
       zRenderStage();
-      view.x = 0; view.y = 0; view.scale = 1;
+      view.x = 0; view.y = 0; view.scale = 1 / zStageScale();
       applyTransform();
       return;
     }
@@ -1200,8 +1213,9 @@
   // Flash's mouseX/mouseY: stage coordinates, always current.
   function setZoeMouse(e){
     const rect = canvas.getBoundingClientRect();
-    Z.mouseX = e.clientX - rect.left;
-    Z.mouseY = e.clientY - rect.top;
+    const k = canvas.width / (rect.width || 1);
+    Z.mouseX = (e.clientX - rect.left) * k;
+    Z.mouseY = (e.clientY - rect.top) * k;
   }
   window.addEventListener('pointermove', (e) => { if (mode === 'zoetrope') setZoeMouse(e); });
   stage.addEventListener('pointermove', (e) => {
